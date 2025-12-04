@@ -7,6 +7,12 @@ export type RoomType = 'patient' | 'hallway' | 'mechanical' | 'utility' | 'stora
 
 export type DamageType = 'floor' | 'wall' | 'ceiling' | 'fixture' | 'infrastructure';
 
+export type CeilingMaterial = 'drop-tile' | 'drywall';
+
+export type LeakSeverity = 'none' | 'moderate' | 'severe';
+
+export type AboveCeilingElement = 'hvac' | 'pipe-insulation' | 'ceiling-insulation';
+
 export interface Room {
   id: string;
   name: string;
@@ -17,23 +23,214 @@ export interface Room {
   depth: number;  // Depth in feet
   fixtures: string[];
   damageTypes: DamageType[];
+  // Enhanced fields per IICRC S500 / dev-guide spec
+  floorMaterial: 'vinyl-concrete';
+  wallMaterial: 'drywall-insulated';
+  ceilingMaterial: CeilingMaterial;
+  floodDepthRange: [number, number];  // [min, max] in inches (3-6")
+  hasWallWicking: boolean;
+  ceilingLeakSeverity: LeakSeverity;
+  aboveCeilingElements: AboveCeilingElement[];
+  requiresDemolition: string[];
 }
 
-// Damage color mapping
+// Alarm-style damage colors for visual clarity
+// Red = Floor damage, Orange = Wall damage, Yellow = Ceiling damage
 export const DAMAGE_COLORS = {
-  floor: '#3b82f6',        // Blue - vinyl sheet over concrete
-  wall: '#f97316',         // Orange - drywall + cavity insulation
-  ceiling: '#92400e',      // Brown - drop tiles + drywall
-  fixture: '#ef4444',      // Red - sinks, toilets, cabinets
-  infrastructure: '#7c3aed' // Purple - HVAC, hydronic pipes, insulation
+  // Floor damage - RED family
+  floor: '#DC2626',          // Red (Tailwind red-600)
+  floodDeep: '#DC2626',      // Red
+  floodMedium: '#EF4444',    // Lighter red
+  floodShallow: '#F87171',   // Even lighter red
+  fixture: '#B91C1C',        // Darker red for fixtures
+
+  // Wall damage - ORANGE family
+  wall: '#F97316',           // Orange (Tailwind orange-500)
+  wallWicking: '#F97316',    // Orange
+
+  // Ceiling damage - YELLOW family
+  ceiling: '#FBBF24',        // Yellow/Amber (Tailwind yellow-400)
+  ceilingSevere: '#F59E0B',  // Amber-500
+  ceilingModerate: '#FBBF24', // Yellow-400
+
+  // Above-ceiling infrastructure (also yellow family)
+  hvac: '#FCD34D',           // Yellow-300
+  pipeInsulation: '#FDE68A', // Yellow-200
+  ceilingInsulation: '#FEF3C7', // Yellow-100
+
+  // Demolition overlay
+  demolition: '#DC2626',     // Red at 30% opacity
+  infrastructure: '#FCD34D'  // Yellow for infrastructure
 } as const;
 
-// Clean surface colors
+// Damage descriptions for legend (Category 3 aligned)
+export const DAMAGE_DESCRIPTIONS = {
+  floodDeep: {
+    label: 'Deep Flood (5-6")',
+    material: 'Vinyl sheet over concrete',
+    description: 'Category 3 standing water - deepest areas',
+    color: DAMAGE_COLORS.floodDeep,
+  },
+  floodMedium: {
+    label: 'Medium Flood (4-5")',
+    material: 'Vinyl sheet over concrete',
+    description: 'Category 3 standing water - mid depth',
+    color: DAMAGE_COLORS.floodMedium,
+  },
+  floodShallow: {
+    label: 'Shallow Flood (3-4")',
+    material: 'Vinyl sheet over concrete',
+    description: 'Category 3 standing water - perimeter',
+    color: DAMAGE_COLORS.floodShallow,
+  },
+  wallWicking: {
+    label: 'Wall Wicking',
+    material: 'Drywall + cavity insulation',
+    description: 'Moisture wicking 0-24" from flood level',
+    color: DAMAGE_COLORS.wallWicking,
+  },
+  ceilingSevere: {
+    label: 'Severe Leak',
+    material: 'Drop tiles / drywall',
+    description: 'Direct roof leak impact zone',
+    color: DAMAGE_COLORS.ceilingSevere,
+  },
+  ceilingModerate: {
+    label: 'Moderate Leak',
+    material: 'Drop tiles / drywall',
+    description: 'Secondary moisture zone',
+    color: DAMAGE_COLORS.ceilingModerate,
+  },
+  hvac: {
+    label: 'HVAC Ducting',
+    material: 'Metal duct with insulation',
+    description: 'Above-ceiling duct affected',
+    color: DAMAGE_COLORS.hvac,
+  },
+  pipeInsulation: {
+    label: 'Pipe Insulation',
+    material: 'Hydronic pipe wrapping',
+    description: 'Above-ceiling pipe insulation affected',
+    color: DAMAGE_COLORS.pipeInsulation,
+  },
+  ceilingInsulation: {
+    label: 'Ceiling Insulation',
+    material: 'Plenum insulation',
+    description: 'Above-ceiling insulation affected',
+    color: DAMAGE_COLORS.ceilingInsulation,
+  },
+  demolition: {
+    label: 'Demolition Required',
+    material: 'Porous materials',
+    description: 'Materials requiring removal per Category 3 standards',
+    color: DAMAGE_COLORS.demolition,
+  },
+  // Legacy entries for backward compatibility
+  floor: {
+    label: 'Flooring',
+    material: 'Vinyl sheet over concrete',
+    description: 'Water trapped between vinyl and substrate (3-6")',
+    color: DAMAGE_COLORS.floor,
+  },
+  wall: {
+    label: 'Walls',
+    material: 'Drywall + cavity insulation',
+    description: 'Moisture wicking 0-24" from flood level',
+    color: DAMAGE_COLORS.wall,
+  },
+  ceiling: {
+    label: 'Ceiling',
+    material: 'Drop tiles + drywall',
+    description: 'Water stains from roof leaks',
+    color: DAMAGE_COLORS.ceiling,
+  },
+  fixture: {
+    label: 'Fixtures',
+    material: 'Sinks, toilets, cabinets',
+    description: 'Direct water contact damage',
+    color: DAMAGE_COLORS.fixture,
+  },
+  infrastructure: {
+    label: 'Above-Ceiling',
+    material: 'HVAC ducts, hydronic pipes',
+    description: 'Insulation damage from roof leaks',
+    color: DAMAGE_COLORS.infrastructure,
+  },
+} as const;
+
+// Helper function: Deterministic leak severity based on room position
+export function getLeakSeverity(roomX: number, roomZ: number, roomId: string): LeakSeverity {
+  // Exterior proximity (near edges = more leaks from wind-driven rain)
+  const nearExterior = roomX < 35 || roomX > 115;
+  // Roof penetration zones (z near 150, 400, 600)
+  const nearPenetration = [150, 400, 600].some(z => Math.abs(roomZ - z) < 30);
+
+  if (nearExterior && nearPenetration) return 'severe';
+  if (nearExterior || nearPenetration) return 'moderate';
+  // Interior rooms: deterministic 30% based on room ID hash
+  const hash = roomId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return hash % 10 < 3 ? 'moderate' : 'none';
+}
+
+// Helper function: Ceiling material based on room position
+export function getCeilingMaterial(roomZ: number, roomType: RoomType): CeilingMaterial {
+  // Patient rooms in sections 1-3 (z > 400): drop-tile
+  // Patient rooms in sections 4-5 (z <= 400): drywall
+  // Hallways: drop-tile
+  // Mechanical/Utility: drywall
+  if (roomType === 'hallway') return 'drop-tile';
+  if (roomType === 'mechanical' || roomType === 'utility') return 'drywall';
+  return roomZ > 400 ? 'drop-tile' : 'drywall';
+}
+
+// Helper function: Get above-ceiling elements based on room type
+export function getAboveCeilingElements(roomType: RoomType): AboveCeilingElement[] {
+  if (roomType === 'patient') return ['hvac', 'pipe-insulation'];
+  if (roomType === 'mechanical') return ['hvac', 'pipe-insulation', 'ceiling-insulation'];
+  if (roomType === 'hallway') return ['hvac'];
+  return [];
+}
+
+// Helper function: Get demolition requirements based on damage
+export function getDemolitionRequirements(
+  ceilingMaterial: CeilingMaterial,
+  leakSeverity: LeakSeverity,
+  hasWallWicking: boolean,
+  fixtures: string[]
+): string[] {
+  const demolition: string[] = [];
+
+  // Ceiling materials based on leak severity
+  if (leakSeverity !== 'none') {
+    if (ceilingMaterial === 'drop-tile') {
+      demolition.push('Drop ceiling tiles');
+    } else {
+      demolition.push('Drywall ceiling sections');
+    }
+    demolition.push('Above-ceiling insulation');
+  }
+
+  // Wall insulation in wicking zones
+  if (hasWallWicking) {
+    demolition.push('Wall cavity insulation (0-24")');
+    demolition.push('Drywall base (0-24")');
+  }
+
+  // Porous cabinet materials
+  if (fixtures.includes('cabinet')) {
+    demolition.push('Porous cabinet materials');
+  }
+
+  return demolition;
+}
+
+// Clean building surface colors (neutral/recessive)
 export const SURFACE_COLORS = {
-  wall: '#fafafa',
-  floor: '#d4c4b0',
-  ceiling: '#f5f5f5',
-  floodWater: '#3b6e8f'
+  wall: '#FFFFFF',          // Pure white
+  floor: '#F5F5F4',         // Stone-50 (very light warm gray)
+  ceiling: '#FAFAF9',       // Stone-50 variant
+  roof: '#E7E5E4',          // Stone-200 (slightly visible)
+  floodWater: '#60A5FA'     // Blue-400 (more visible water)
 } as const;
 
 // Building dimensions
@@ -153,6 +350,18 @@ function generatePatientRooms(): Room[] {
   ];
 
   allSections.forEach((room) => {
+    const ceilingMat = getCeilingMaterial(room.z, 'patient');
+    const leakSev = getLeakSeverity(room.x, room.z, room.id);
+    const hasWicking = true; // All flood-affected rooms have wicking
+    const fixtures = ['toilet', 'sink'];
+
+    // Build damageTypes based on actual damage conditions
+    const damageTypes: DamageType[] = ['floor', 'wall', 'fixture']; // Floor flooding affects all
+    if (leakSev !== 'none') {
+      damageTypes.push('ceiling');
+      damageTypes.push('infrastructure');
+    }
+
     rooms.push({
       id: room.id,
       name: `Room ${room.id} - Patient`,
@@ -161,8 +370,17 @@ function generatePatientRooms(): Room[] {
       z: room.z,
       width: roomWidth,
       depth: roomDepth,
-      fixtures: ['toilet', 'sink'],
-      damageTypes: ['floor', 'wall', 'ceiling', 'fixture'],
+      fixtures,
+      damageTypes,
+      // Enhanced fields
+      floorMaterial: 'vinyl-concrete',
+      wallMaterial: 'drywall-insulated',
+      ceilingMaterial: ceilingMat,
+      floodDepthRange: [3, 6], // 3-6 inches throughout
+      hasWallWicking: hasWicking,
+      ceilingLeakSeverity: leakSev,
+      aboveCeilingElements: getAboveCeilingElements('patient'),
+      requiresDemolition: getDemolitionRequirements(ceilingMat, leakSev, hasWicking, fixtures),
     });
   });
 
@@ -171,168 +389,151 @@ function generatePatientRooms(): Room[] {
 
 // Generate hallways
 function generateHallways(): Room[] {
-  return [
-    {
-      id: 'Hallway 1',
-      name: 'Hallway 1',
-      type: 'hallway',
-      x: 60,
-      z: 630,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 1.1',
-      name: 'Hallway 1.1',
-      type: 'hallway',
-      x: 100,
-      z: 590,
-      width: 8,
-      depth: 30,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 2',
-      name: 'Hallway 2',
-      type: 'hallway',
-      x: 60,
-      z: 550,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 2.1',
-      name: 'Hallway 2.1',
-      type: 'hallway',
-      x: 60,
-      z: 470,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 3',
-      name: 'Hallway 3',
-      type: 'hallway',
-      x: 60,
-      z: 400,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 4',
-      name: 'Hallway 4',
-      type: 'hallway',
-      x: 100,
-      z: 340,
-      width: 8,
-      depth: 50,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 5',
-      name: 'Hallway 5',
-      type: 'hallway',
-      x: 60,
-      z: 270,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 6',
-      name: 'Hallway 6',
-      type: 'hallway',
-      x: 120,
-      z: 200,
-      width: 8,
-      depth: 60,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
-    {
-      id: 'Hallway 7',
-      name: 'Hallway 7',
-      type: 'hallway',
-      x: 60,
-      z: 150,
-      width: 60,
-      depth: 8,
-      fixtures: [],
-      damageTypes: ['floor', 'wall', 'ceiling'],
-    },
+  const hallwayData = [
+    { id: 'Hallway 1', x: 60, z: 630, width: 60, depth: 8 },
+    { id: 'Hallway 1.1', x: 100, z: 590, width: 8, depth: 30 },
+    { id: 'Hallway 2', x: 60, z: 550, width: 60, depth: 8 },
+    { id: 'Hallway 2.1', x: 60, z: 470, width: 60, depth: 8 },
+    { id: 'Hallway 3', x: 60, z: 400, width: 60, depth: 8 },
+    { id: 'Hallway 4', x: 100, z: 340, width: 8, depth: 50 },
+    { id: 'Hallway 5', x: 60, z: 270, width: 60, depth: 8 },
+    { id: 'Hallway 6', x: 120, z: 200, width: 8, depth: 60 },
+    { id: 'Hallway 7', x: 60, z: 150, width: 60, depth: 8 },
   ];
+
+  return hallwayData.map(h => {
+    const ceilingMat = getCeilingMaterial(h.z, 'hallway');
+    const leakSev = getLeakSeverity(h.x, h.z, h.id);
+    const hasWicking = true;
+    const fixtures: string[] = [];
+
+    // Build damageTypes based on actual damage conditions
+    const damageTypes: DamageType[] = ['floor', 'wall']; // Floor flooding affects all
+    if (leakSev !== 'none') {
+      damageTypes.push('ceiling');
+    }
+
+    return {
+      id: h.id,
+      name: h.id,
+      type: 'hallway' as const,
+      x: h.x,
+      z: h.z,
+      width: h.width,
+      depth: h.depth,
+      fixtures,
+      damageTypes,
+      // Enhanced fields
+      floorMaterial: 'vinyl-concrete' as const,
+      wallMaterial: 'drywall-insulated' as const,
+      ceilingMaterial: ceilingMat,
+      floodDepthRange: [3, 6] as [number, number],
+      hasWallWicking: hasWicking,
+      ceilingLeakSeverity: leakSev,
+      aboveCeilingElements: getAboveCeilingElements('hallway'),
+      requiresDemolition: getDemolitionRequirements(ceilingMat, leakSev, hasWicking, fixtures),
+    };
+  });
 }
 
 // Generate utility and mechanical rooms
 function generateUtilityRooms(): Room[] {
-  return [
+  const utilityData = [
     {
       id: 'Mechanical Room 1',
       name: 'Mechanical Room 1',
-      type: 'mechanical',
+      type: 'mechanical' as const,
       x: 60,
       z: 260,
       width: 20,
       depth: 15,
       fixtures: ['hvac_unit', 'pump', 'electrical_panel', 'water_heater'],
-      damageTypes: ['floor', 'wall', 'ceiling', 'fixture', 'infrastructure'],
+      hasFixtureDamage: true,
     },
     {
       id: 'Utility 1',
       name: 'Utility Room 1',
-      type: 'utility',
+      type: 'utility' as const,
       x: 45,
       z: 580,
       width: 10,
       depth: 10,
       fixtures: ['sink', 'cabinet'],
-      damageTypes: ['floor', 'wall', 'fixture'],
+      hasFixtureDamage: true,
     },
     {
       id: 'Utility 2',
       name: 'Utility Room 2',
-      type: 'utility',
+      type: 'utility' as const,
       x: 45,
       z: 420,
       width: 10,
       depth: 10,
       fixtures: ['sink', 'cabinet'],
-      damageTypes: ['floor', 'wall', 'fixture'],
+      hasFixtureDamage: true,
     },
     {
       id: 'Storage 1',
       name: 'Storage Room 1',
-      type: 'storage',
+      type: 'storage' as const,
       x: 90,
       z: 500,
       width: 12,
       depth: 10,
       fixtures: ['cabinet', 'cabinet'],
-      damageTypes: ['floor', 'wall'],
+      hasFixtureDamage: false,  // Storage cabinets - non-porous assumed
     },
     {
       id: 'Storage 2',
       name: 'Storage Room 2',
-      type: 'storage',
+      type: 'storage' as const,
       x: 90,
       z: 350,
       width: 12,
       depth: 10,
       fixtures: ['cabinet', 'cabinet'],
-      damageTypes: ['floor', 'wall'],
+      hasFixtureDamage: false,  // Storage cabinets - non-porous assumed
     },
   ];
+
+  return utilityData.map(u => {
+    const ceilingMat = getCeilingMaterial(u.z, u.type);
+    const leakSev = getLeakSeverity(u.x, u.z, u.id);
+    const hasWicking = true; // All flood-affected rooms
+
+    // Build damageTypes based on actual damage conditions
+    const damageTypes: DamageType[] = ['floor', 'wall']; // Floor flooding affects all
+    if (u.hasFixtureDamage) {
+      damageTypes.push('fixture');
+    }
+    if (leakSev !== 'none') {
+      damageTypes.push('ceiling');
+      if (u.type === 'mechanical') {
+        damageTypes.push('infrastructure');
+      }
+    }
+
+    return {
+      id: u.id,
+      name: u.name,
+      type: u.type,
+      x: u.x,
+      z: u.z,
+      width: u.width,
+      depth: u.depth,
+      fixtures: u.fixtures,
+      damageTypes,
+      // Enhanced fields
+      floorMaterial: 'vinyl-concrete' as const,
+      wallMaterial: 'drywall-insulated' as const,
+      ceilingMaterial: ceilingMat,
+      floodDepthRange: [3, 6] as [number, number],
+      hasWallWicking: hasWicking,
+      ceilingLeakSeverity: leakSev,
+      aboveCeilingElements: getAboveCeilingElements(u.type),
+      requiresDemolition: getDemolitionRequirements(ceilingMat, leakSev, hasWicking, u.fixtures),
+    };
+  });
 }
 
 // All rooms combined

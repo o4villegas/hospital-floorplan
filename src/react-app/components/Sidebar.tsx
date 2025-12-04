@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { LayerState } from '../hooks/useLayers';
-import { CameraView } from '../hooks/useCamera';
 import { Room, DAMAGE_COLORS, stats } from '../data/roomData';
 
 interface SidebarProps {
@@ -8,10 +7,10 @@ interface SidebarProps {
   toggleLayer: (layer: keyof LayerState) => void;
   setAllLayers: (value: boolean) => void;
   allOn: boolean;
-  currentView: CameraView;
-  setView: (view: CameraView) => void;
   selectedRoom: Room | null;
   onClearSelection: () => void;
+  legendOpen: boolean;
+  onLegendToggle: () => void;
 }
 
 export function Sidebar({
@@ -19,26 +18,47 @@ export function Sidebar({
   toggleLayer,
   setAllLayers,
   allOn,
-  currentView,
-  setView,
   selectedRoom,
   onClearSelection,
+  legendOpen,
+  onLegendToggle,
 }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  const layerLabels: Record<keyof LayerState, string> = {
-    roof: 'Roof',
-    ceiling: 'Ceiling',
-    aboveCeiling: 'Above-Ceiling',
-    floodWater: 'Flood Water',
-    damage: 'Damage Indicators',
-  };
+  // Auto-collapse on narrow viewports
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1200 && !collapsed) {
+        setCollapsed(true);
+      }
+    };
+    // Initial check
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [collapsed]);
 
-  const viewLabels: Record<CameraView, string> = {
-    top: 'Top',
-    isometric: 'Iso',
-    side: 'Side',
-  };
+  // Layer display configuration with colors
+  const layerConfig: { key: keyof LayerState; label: string; color: string; description: string }[] = [
+    {
+      key: 'floorDamage',
+      label: 'Floor Damage',
+      color: DAMAGE_COLORS.floor,
+      description: 'Flood water, fixtures',
+    },
+    {
+      key: 'wallDamage',
+      label: 'Wall Damage',
+      color: DAMAGE_COLORS.wall,
+      description: 'Moisture wicking',
+    },
+    {
+      key: 'ceilingDamage',
+      label: 'Ceiling Damage',
+      color: DAMAGE_COLORS.ceiling,
+      description: 'Leaks, infrastructure',
+    },
+  ];
 
   if (collapsed) {
     return (
@@ -52,13 +72,7 @@ export function Sidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <button className="p-2 hover:bg-slate-700 rounded" title="Camera">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
-        <button className="p-2 hover:bg-slate-700 rounded" title="Layers">
+        <button className="p-2 hover:bg-slate-700 rounded" title="Damage Layers">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
           </svg>
@@ -99,30 +113,10 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Camera Views */}
-      <div className="p-4 border-b border-slate-700">
-        <h2 className="text-sm font-semibold text-slate-400 mb-2">CAMERA VIEWS</h2>
-        <div className="flex gap-2">
-          {(Object.keys(viewLabels) as CameraView[]).map((view) => (
-            <button
-              key={view}
-              onClick={() => setView(view)}
-              className={`flex-1 py-2 px-3 rounded text-sm font-medium transition-colors ${
-                currentView === view
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-              }`}
-            >
-              {viewLabels[view]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Layers */}
+      {/* Damage Layers - 3 toggles only */}
       <div className="p-4 border-b border-slate-700">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-slate-400">LAYERS</h2>
+          <h2 className="text-sm font-semibold text-slate-400">DAMAGE LAYERS</h2>
           <button
             onClick={() => setAllLayers(!allOn)}
             className={`text-xs px-2 py-1 rounded ${
@@ -132,28 +126,37 @@ export function Sidebar({
             {allOn ? 'All On' : 'All Off'}
           </button>
         </div>
-        <div className="space-y-2">
-          {(Object.keys(layers) as (keyof LayerState)[]).map((layer) => (
-            <label
-              key={layer}
+        <div className="space-y-3">
+          {layerConfig.map(({ key, label, color, description }) => (
+            <div
+              key={key}
               className="flex items-center justify-between cursor-pointer group"
+              onClick={() => toggleLayer(key)}
             >
-              <span className="text-sm group-hover:text-white text-slate-300">
-                {layerLabels[layer]}
-              </span>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-4 h-4 rounded"
+                  style={{ backgroundColor: color }}
+                />
+                <div>
+                  <span className="text-sm group-hover:text-white text-slate-300 block">
+                    {label}
+                  </span>
+                  <span className="text-xs text-slate-500">{description}</span>
+                </div>
+              </div>
               <button
-                onClick={() => toggleLayer(layer)}
                 className={`w-10 h-5 rounded-full transition-colors relative ${
-                  layers[layer] ? 'bg-blue-600' : 'bg-slate-600'
+                  layers[key] ? 'bg-blue-600' : 'bg-slate-600'
                 }`}
               >
                 <span
                   className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                    layers[layer] ? 'left-5' : 'left-0.5'
+                    layers[key] ? 'left-5' : 'left-0.5'
                   }`}
                 />
               </button>
-            </label>
+            </div>
           ))}
         </div>
       </div>
@@ -189,46 +192,21 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Legend */}
+      {/* Legend Toggle */}
       <div className="p-4 border-b border-slate-700">
-        <h2 className="text-sm font-semibold text-slate-400 mb-3">DAMAGE LEGEND</h2>
-        <div className="space-y-2 text-sm">
-          <div className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.floor }}
-            />
-            <span className="text-slate-300">Flooring (vinyl/concrete)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.wall }}
-            />
-            <span className="text-slate-300">Walls (drywall/insulation)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.ceiling }}
-            />
-            <span className="text-slate-300">Ceiling (tiles/drywall)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.fixture }}
-            />
-            <span className="text-slate-300">Fixtures (sinks/toilets)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.infrastructure }}
-            />
-            <span className="text-slate-300">Above-ceiling (HVAC/pipes)</span>
-          </div>
-        </div>
+        <button
+          onClick={onLegendToggle}
+          className={`w-full py-2 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            legendOpen
+              ? 'bg-blue-600 text-white'
+              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+          {legendOpen ? 'Hide Legend' : 'Show Legend'}
+        </button>
       </div>
 
       {/* Selected Room */}

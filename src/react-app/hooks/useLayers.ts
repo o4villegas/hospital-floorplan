@@ -1,20 +1,18 @@
 import { useState, useCallback } from 'react';
 
+// Simplified to 3 damage-only toggles
+// Building structure is always visible
 export interface LayerState {
-  roof: boolean;
-  ceiling: boolean;
-  aboveCeiling: boolean;
-  floodWater: boolean;
-  damage: boolean;
+  floorDamage: boolean;   // Floor flooding + fixtures + flood water
+  wallDamage: boolean;    // Wall wicking bands
+  ceilingDamage: boolean; // Ceiling leaks + above-ceiling infrastructure + annotations
 }
 
 export function useLayers() {
   const [layers, setLayers] = useState<LayerState>({
-    roof: true,
-    ceiling: true,
-    aboveCeiling: true,
-    floodWater: true,
-    damage: true,
+    floorDamage: true,
+    wallDamage: true,
+    ceilingDamage: true,
   });
 
   const toggleLayer = useCallback((layer: keyof LayerState) => {
@@ -26,11 +24,9 @@ export function useLayers() {
 
   const setAllLayers = useCallback((value: boolean) => {
     setLayers({
-      roof: value,
-      ceiling: value,
-      aboveCeiling: value,
-      floodWater: value,
-      damage: value,
+      floorDamage: value,
+      wallDamage: value,
+      ceilingDamage: value,
     });
   }, []);
 
