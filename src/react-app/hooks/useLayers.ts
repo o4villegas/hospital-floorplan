@@ -1,31 +1,19 @@
 import { useState, useCallback } from 'react';
 
-// Main toggle + sub-toggles for damage visualization
+// Two independent damage toggles
 export interface LayerState {
-  flood: boolean;        // Main toggle: shows/hides all damage
-  floorDamage: boolean;  // Sub-toggle: floor damage (when flood is ON)
-  wallDamage: boolean;   // Sub-toggle: wall damage (when flood is ON)
-  ceilingDamage: boolean; // Sub-toggle: ceiling damage (when flood is ON)
+  floorDamage: boolean;    // Floor overlay + puddles + wall base wicking
+  ceilingDamage: boolean;  // Ceiling overlay + stains + wall drips
 }
 
 export function useLayers() {
   const [layers, setLayers] = useState<LayerState>({
-    flood: true,
-    floorDamage: true,
-    wallDamage: true,
-    ceilingDamage: true,
+    floorDamage: false,    // OFF by default - clean building on startup
+    ceilingDamage: false,  // OFF by default - clean building on startup
   });
-
-  const toggleFlood = useCallback(() => {
-    setLayers(prev => ({ ...prev, flood: !prev.flood }));
-  }, []);
 
   const toggleFloorDamage = useCallback(() => {
     setLayers(prev => ({ ...prev, floorDamage: !prev.floorDamage }));
-  }, []);
-
-  const toggleWallDamage = useCallback(() => {
-    setLayers(prev => ({ ...prev, wallDamage: !prev.wallDamage }));
   }, []);
 
   const toggleCeilingDamage = useCallback(() => {
@@ -34,9 +22,7 @@ export function useLayers() {
 
   return {
     layers,
-    toggleFlood,
     toggleFloorDamage,
-    toggleWallDamage,
     toggleCeilingDamage,
   };
 }

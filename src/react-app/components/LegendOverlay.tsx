@@ -27,7 +27,7 @@ export function LegendOverlay({ isOpen, onClose }: LegendOverlayProps) {
 
         {/* Content */}
         <div className="p-3 space-y-4 max-h-96 overflow-y-auto">
-          {/* Damage Categories - 3 main types */}
+          {/* Damage Categories - 2 main types */}
           <section>
             <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
               Damage Categories
@@ -36,38 +36,29 @@ export function LegendOverlay({ isOpen, onClose }: LegendOverlayProps) {
               <LegendItem
                 color={DAMAGE_COLORS.floor}
                 label="Floor Damage"
-                description="Flood water, affected fixtures, flooring"
-              />
-              <LegendItem
-                color={DAMAGE_COLORS.wall}
-                label="Wall Damage"
-                description="Moisture wicking, ceiling drip marks"
+                description="Red floor overlay, puddles, wall base wicking"
               />
               <LegendItem
                 color={DAMAGE_COLORS.ceiling}
-                label="Ceiling Damage"
-                description="Roof leaks, infrastructure damage"
+                label="Ceiling/Roof Damage"
+                description="Green ceiling overlay, stains, wall drip marks"
               />
             </div>
           </section>
 
-          {/* Severity Guide */}
+          {/* Visual Elements */}
           <section>
             <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Severity Guide
+              Visual Elements
             </h4>
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 gap-2 text-center text-xs">
               <div className="p-2 rounded" style={{ backgroundColor: DAMAGE_COLORS.floor }}>
-                <p className="font-medium text-white">High</p>
-                <p className="text-white/80">Floor</p>
-              </div>
-              <div className="p-2 rounded" style={{ backgroundColor: DAMAGE_COLORS.wall }}>
-                <p className="font-medium text-white">Medium</p>
-                <p className="text-white/80">Wall</p>
+                <p className="font-medium text-white">Floor</p>
+                <p className="text-white/80">Overlay + Puddles</p>
               </div>
               <div className="p-2 rounded" style={{ backgroundColor: DAMAGE_COLORS.ceiling }}>
-                <p className="font-medium text-slate-800">Lower</p>
-                <p className="text-slate-700">Ceiling</p>
+                <p className="font-medium text-white">Ceiling</p>
+                <p className="text-white/80">Overlay + Stains</p>
               </div>
             </div>
           </section>

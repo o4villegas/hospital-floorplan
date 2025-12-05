@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { LayerState } from '../hooks/useLayers';
-import { DAMAGE_COLORS, stats } from '../data/roomData';
+import { DAMAGE_COLORS } from '../data/roomData';
 
 // Details content for each damage type
 const DAMAGE_DETAILS = {
@@ -8,27 +8,19 @@ const DAMAGE_DETAILS = {
     color: DAMAGE_COLORS.floor,
     label: "Floor Damage",
     materials: "Vinyl sheet material applied over concrete",
-    damage: "Cat 3, penetration through base"
-  },
-  wall: {
-    color: DAMAGE_COLORS.wall,
-    label: "Wall Damage",
-    materials: "Drywall with cavity insulation",
-    damage: "Cat 3 moisture wicking 0-24\" from flood level, plus drip damage from ceiling leaks"
+    damage: "Cat 3, penetration through base with 3-6\" standing water. Wall base wicking 0-24\" from flood level."
   },
   ceiling: {
     color: DAMAGE_COLORS.ceiling,
-    label: "Ceiling Damage",
+    label: "Ceiling/Roof Damage",
     materials: "Mix of drop ceiling tiles and drywall ceilings",
-    damage: "Roof leaks due to wind-driven rain impacting ceilings including items above: HVAC ducting, hydronic pipe insulation, and ceiling insulation"
+    damage: "Roof leaks due to wind-driven rain impacting ceilings and walls. Drip marks on walls, ceiling stains, HVAC and pipe insulation damage."
   }
 };
 
 interface SidebarProps {
   layers: LayerState;
-  toggleFlood: () => void;
   toggleFloorDamage: () => void;
-  toggleWallDamage: () => void;
   toggleCeilingDamage: () => void;
   legendOpen: boolean;
   onLegendToggle: () => void;
@@ -38,9 +30,7 @@ interface SidebarProps {
 
 export function Sidebar({
   layers,
-  toggleFlood,
   toggleFloorDamage,
-  toggleWallDamage,
   toggleCeilingDamage,
   legendOpen,
   onLegendToggle,
@@ -49,7 +39,6 @@ export function Sidebar({
 }: SidebarProps) {
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [floorDetailsOpen, setFloorDetailsOpen] = useState(false);
-  const [wallDetailsOpen, setWallDetailsOpen] = useState(false);
   const [ceilingDetailsOpen, setCeilingDetailsOpen] = useState(false);
 
   if (collapsed) {
@@ -64,14 +53,9 @@ export function Sidebar({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <button className="p-2 hover:bg-slate-700 rounded" title="Damage Overlay">
+        <button className="p-2 hover:bg-slate-700 rounded" title="Damage Layers">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-        </button>
-        <button className="p-2 hover:bg-slate-700 rounded" title="Statistics">
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
         </button>
       </div>
@@ -98,229 +82,131 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Main Damage Overlay Toggle + Sub-toggles */}
+      {/* Two Independent Damage Toggles */}
       <div className="p-4 border-b border-slate-700">
         <h2 className="text-sm font-semibold text-slate-400 mb-3">DAMAGE LAYERS</h2>
 
-        {/* Main Toggle */}
-        <div
-          className="flex items-center justify-between cursor-pointer group"
-          onClick={toggleFlood}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: DAMAGE_COLORS.floor }}
-            />
-            <div>
-              <span className="text-sm group-hover:text-white text-slate-300 block">
-                Damage Overlay
-              </span>
-              <span className="text-xs text-slate-500">Floor, wall & ceiling damage</span>
-            </div>
-          </div>
-          <button
-            className={`w-10 h-5 rounded-full transition-colors relative ${
-              layers.flood ? 'bg-blue-600' : 'bg-slate-600'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
-                layers.flood ? 'left-5' : 'left-0.5'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Sub-toggles (only visible when flood is ON) */}
-        {layers.flood && (
-          <div className="mt-3 ml-4 space-y-2">
-            {/* Floor Damage Sub-toggle */}
-            <div>
-              <div className="flex items-center justify-between">
+        <div className="space-y-3">
+          {/* Floor Damage Toggle */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div
+                className="flex items-center gap-3 cursor-pointer flex-1"
+                onClick={toggleFloorDamage}
+              >
                 <div
-                  className="flex items-center gap-2 cursor-pointer flex-1"
-                  onClick={toggleFloorDamage}
-                >
-                  <div
-                    className="w-3 h-3 rounded"
-                    style={{ backgroundColor: DAMAGE_DETAILS.floor.color }}
-                  />
-                  <span className={`text-sm ${layers.floorDamage ? 'text-slate-200' : 'text-slate-500'}`}>
+                  className="w-4 h-4 rounded"
+                  style={{ backgroundColor: DAMAGE_DETAILS.floor.color }}
+                />
+                <div>
+                  <span className={`text-sm font-medium ${layers.floorDamage ? 'text-white' : 'text-slate-400'}`}>
                     {DAMAGE_DETAILS.floor.label}
                   </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setFloorDetailsOpen(!floorDetailsOpen); }}
-                    className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
-                  >
-                    Details
-                    <svg
-                      className={`w-3 h-3 transition-transform ${floorDetailsOpen ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <input
-                    type="checkbox"
-                    checked={layers.floorDamage}
-                    onChange={toggleFloorDamage}
-                    className="w-4 h-4 rounded border-slate-500 bg-slate-700 text-blue-600 focus:ring-blue-500"
-                  />
+                  <span className="text-xs text-slate-500 block">Floor overlay, puddles, wall base</span>
                 </div>
               </div>
-              {floorDetailsOpen && (
-                <div className="mt-2 ml-5 p-2 bg-slate-800 rounded text-xs">
-                  <div className="mb-2">
-                    <span className="text-slate-400 font-medium">Materials</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.floor.materials}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Damage</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.floor.damage}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Wall Damage Sub-toggle */}
-            <div>
-              <div className="flex items-center justify-between">
-                <div
-                  className="flex items-center gap-2 cursor-pointer flex-1"
-                  onClick={toggleWallDamage}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setFloorDetailsOpen(!floorDetailsOpen); }}
+                  className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
                 >
-                  <div
-                    className="w-3 h-3 rounded"
-                    style={{ backgroundColor: DAMAGE_DETAILS.wall.color }}
-                  />
-                  <span className={`text-sm ${layers.wallDamage ? 'text-slate-200' : 'text-slate-500'}`}>
-                    {DAMAGE_DETAILS.wall.label}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setWallDetailsOpen(!wallDetailsOpen); }}
-                    className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                  Details
+                  <svg
+                    className={`w-3 h-3 transition-transform ${floorDetailsOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
                   >
-                    Details
-                    <svg
-                      className={`w-3 h-3 transition-transform ${wallDetailsOpen ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <input
-                    type="checkbox"
-                    checked={layers.wallDamage}
-                    onChange={toggleWallDamage}
-                    className="w-4 h-4 rounded border-slate-500 bg-slate-700 text-blue-600 focus:ring-blue-500"
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={toggleFloorDamage}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${
+                    layers.floorDamage ? 'bg-red-600' : 'bg-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                      layers.floorDamage ? 'left-5' : 'left-0.5'
+                    }`}
                   />
+                </button>
+              </div>
+            </div>
+            {floorDetailsOpen && (
+              <div className="mt-2 ml-7 p-2 bg-slate-800 rounded text-xs">
+                <div className="mb-2">
+                  <span className="text-slate-400 font-medium">Materials</span>
+                  <p className="text-slate-300">{DAMAGE_DETAILS.floor.materials}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-medium">Damage</span>
+                  <p className="text-slate-300">{DAMAGE_DETAILS.floor.damage}</p>
                 </div>
               </div>
-              {wallDetailsOpen && (
-                <div className="mt-2 ml-5 p-2 bg-slate-800 rounded text-xs">
-                  <div className="mb-2">
-                    <span className="text-slate-400 font-medium">Materials</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.wall.materials}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Damage</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.wall.damage}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
+          </div>
 
-            {/* Ceiling Damage Sub-toggle */}
-            <div>
-              <div className="flex items-center justify-between">
+          {/* Ceiling/Roof Damage Toggle */}
+          <div>
+            <div className="flex items-center justify-between">
+              <div
+                className="flex items-center gap-3 cursor-pointer flex-1"
+                onClick={toggleCeilingDamage}
+              >
                 <div
-                  className="flex items-center gap-2 cursor-pointer flex-1"
-                  onClick={toggleCeilingDamage}
-                >
-                  <div
-                    className="w-3 h-3 rounded"
-                    style={{ backgroundColor: DAMAGE_DETAILS.ceiling.color }}
-                  />
-                  <span className={`text-sm ${layers.ceilingDamage ? 'text-slate-200' : 'text-slate-500'}`}>
+                  className="w-4 h-4 rounded"
+                  style={{ backgroundColor: DAMAGE_DETAILS.ceiling.color }}
+                />
+                <div>
+                  <span className={`text-sm font-medium ${layers.ceilingDamage ? 'text-white' : 'text-slate-400'}`}>
                     {DAMAGE_DETAILS.ceiling.label}
                   </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setCeilingDetailsOpen(!ceilingDetailsOpen); }}
-                    className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
-                  >
-                    Details
-                    <svg
-                      className={`w-3 h-3 transition-transform ${ceilingDetailsOpen ? 'rotate-180' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <input
-                    type="checkbox"
-                    checked={layers.ceilingDamage}
-                    onChange={toggleCeilingDamage}
-                    className="w-4 h-4 rounded border-slate-500 bg-slate-700 text-blue-600 focus:ring-blue-500"
-                  />
+                  <span className="text-xs text-slate-500 block">Ceiling overlay, stains, wall drips</span>
                 </div>
               </div>
-              {ceilingDetailsOpen && (
-                <div className="mt-2 ml-5 p-2 bg-slate-800 rounded text-xs">
-                  <div className="mb-2">
-                    <span className="text-slate-400 font-medium">Materials</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.ceiling.materials}</p>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Damage</span>
-                    <p className="text-slate-300">{DAMAGE_DETAILS.ceiling.damage}</p>
-                  </div>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setCeilingDetailsOpen(!ceilingDetailsOpen); }}
+                  className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                >
+                  Details
+                  <svg
+                    className={`w-3 h-3 transition-transform ${ceilingDetailsOpen ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={toggleCeilingDamage}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${
+                    layers.ceilingDamage ? 'bg-green-600' : 'bg-slate-600'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                      layers.ceilingDamage ? 'left-5' : 'left-0.5'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Statistics */}
-      <div className="p-4 border-b border-slate-700">
-        <h2 className="text-sm font-semibold text-slate-400 mb-3">STATISTICS</h2>
-        <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Rooms Affected:</span>
-            <span className="font-medium">{stats.totalRooms}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Hallways:</span>
-            <span className="font-medium">{stats.totalHallways}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Toilets:</span>
-            <span className="font-medium">{stats.totalToilets}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Sinks:</span>
-            <span className="font-medium">{stats.totalSinks}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Cabinets:</span>
-            <span className="font-medium">{stats.totalCabinets}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-slate-400">Mech. Equipment:</span>
-            <span className="font-medium">{stats.mechanicalEquipment}</span>
+            {ceilingDetailsOpen && (
+              <div className="mt-2 ml-7 p-2 bg-slate-800 rounded text-xs">
+                <div className="mb-2">
+                  <span className="text-slate-400 font-medium">Materials</span>
+                  <p className="text-slate-300">{DAMAGE_DETAILS.ceiling.materials}</p>
+                </div>
+                <div>
+                  <span className="text-slate-400 font-medium">Damage</span>
+                  <p className="text-slate-300">{DAMAGE_DETAILS.ceiling.damage}</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

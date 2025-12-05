@@ -35,10 +35,10 @@ export interface Room {
 }
 
 // Alarm-style damage colors for visual clarity
-// Red = Floor damage, Orange = Wall damage
+// Red = Floor damage, Green = Ceiling/Roof damage
 export const DAMAGE_COLORS = {
-  floor: '#DC2626',  // Red (Tailwind red-600)
-  wall: '#F97316',   // Orange (Tailwind orange-500)
+  floor: '#DC2626',    // Red (Tailwind red-600)
+  ceiling: '#22C55E',  // Green (Tailwind green-500)
 } as const;
 
 // Helper function: Deterministic leak severity based on room position
@@ -139,12 +139,8 @@ export const BUILDING = {
   // Scaling factor: ~20px per foot
   width: 150,
   length: 670,
-  floorHeight: 10,      // Floor to ceiling
-  ceilingHeight: 9,     // Drop ceiling height
-  plenumHeight: 3,      // Above ceiling space
-  totalHeight: 13,      // Total floor to roof
+  floorHeight: 10,      // Floor to ceiling (walls Y=0 to Y=10)
   wallThickness: 0.5,   // 6 inches
-  floodWaterHeight: 0.5, // 6 inches
   wickingHeight: 2,     // 24 inches moisture wicking
 };
 
@@ -442,15 +438,3 @@ export const rooms: Room[] = [
   ...generateHallways(),
   ...generateUtilityRooms(),
 ];
-
-// Statistics
-export const stats = {
-  totalRooms: rooms.filter(r => r.type === 'patient').length,
-  totalHallways: rooms.filter(r => r.type === 'hallway').length,
-  totalToilets: rooms.reduce((acc, r) => acc + r.fixtures.filter(f => f === 'toilet').length, 0),
-  totalSinks: rooms.reduce((acc, r) => acc + r.fixtures.filter(f => f === 'sink').length, 0),
-  totalCabinets: rooms.reduce((acc, r) => acc + r.fixtures.filter(f => f === 'cabinet').length, 0),
-  mechanicalEquipment: rooms
-    .filter(r => r.type === 'mechanical')
-    .reduce((acc, r) => acc + r.fixtures.length, 0),
-};

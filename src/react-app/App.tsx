@@ -5,7 +5,7 @@ import { LegendOverlay } from './components/LegendOverlay';
 import { useLayers } from './hooks/useLayers';
 
 function App() {
-  const { layers, toggleFlood, toggleFloorDamage, toggleWallDamage, toggleCeilingDamage } = useLayers();
+  const { layers, toggleFloorDamage, toggleCeilingDamage } = useLayers();
   const [legendOpen, setLegendOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -17,9 +17,7 @@ function App() {
     <div className="w-full h-full relative bg-slate-900">
       <Sidebar
         layers={layers}
-        toggleFlood={toggleFlood}
         toggleFloorDamage={toggleFloorDamage}
-        toggleWallDamage={toggleWallDamage}
         toggleCeilingDamage={toggleCeilingDamage}
         legendOpen={legendOpen}
         onLegendToggle={handleLegendToggle}

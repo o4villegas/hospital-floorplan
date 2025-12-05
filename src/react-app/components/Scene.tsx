@@ -48,17 +48,12 @@ export function Scene({ layers }: SceneProps) {
   const sphericalRef = useRef({ ...DEFAULT_CAMERA });
   const targetRef = useRef(new THREE.Vector3(BUILDING.width / 2, 0, BUILDING.length / 2));
 
-  // Layer groups - building + 3 damage sub-groups
+  // Layer groups - building + 2 damage groups
   const layerGroupsRef = useRef<{
-    building: THREE.Group;      // Always visible: walls, floors, ceiling, roof
-    floorDamage: THREE.Group;   // Floor damage meshes
-    wallDamage: THREE.Group;    // Wall damage (base wicking + top drips)
-    ceilingDamage: THREE.Group; // Ceiling/roof/infrastructure damage
+    building: THREE.Group;      // Always visible: walls, floors, fixtures
+    floorDamage: THREE.Group;   // Floor overlay + puddles + wall base wicking
+    ceilingDamage: THREE.Group; // Ceiling overlay + stains + wall drips
   } | null>(null);
-
-  // Animation state for ceiling explode view
-  const ceilingDamageTargetY = useRef(0);
-  const CEILING_EXPLODE_DISTANCE = 18; // Units to lift ceiling damage group when toggled
 
   // Initialize scene
   useEffect(() => {
@@ -96,12 +91,11 @@ export function Scene({ layers }: SceneProps) {
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // Create layer groups - building + 3 damage sub-groups
+    // Create layer groups - building + 2 damage groups
     const layerGroups = {
       building: new THREE.Group(),      // Always visible
-      floorDamage: new THREE.Group(),   // Floor damage overlays
-      wallDamage: new THREE.Group(),    // Wall damage (base wicking + top drips)
-      ceilingDamage: new THREE.Group(), // Ceiling/roof/infrastructure
+      floorDamage: new THREE.Group(),   // Floor overlay + puddles + wall base
+      ceilingDamage: new THREE.Group(), // Ceiling overlay + stains + wall drips
     };
     layerGroupsRef.current = layerGroups;
     Object.values(layerGroups).forEach(group => scene.add(group));
@@ -109,7 +103,7 @@ export function Scene({ layers }: SceneProps) {
     // Build the hospital
     buildHospital(layerGroups);
 
-    // Animation loop - NO momentum, immediate response
+    // Animation loop - camera only
     const animate = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
 
@@ -120,16 +114,6 @@ export function Scene({ layers }: SceneProps) {
       camera.position.y = target.y + radius * Math.cos(phi);
       camera.position.z = target.z + radius * Math.sin(phi) * Math.cos(theta);
       camera.lookAt(target);
-
-      // Animate ceiling damage group Y position (smooth lerp for exploded view)
-      if (layerGroupsRef.current) {
-        const currentY = layerGroupsRef.current.ceilingDamage.position.y;
-        const targetY = ceilingDamageTargetY.current;
-        if (Math.abs(currentY - targetY) > 0.01) {
-          layerGroupsRef.current.ceilingDamage.position.y =
-            currentY + (targetY - currentY) * 0.08;
-        }
-      }
 
       renderer.render(scene, camera);
     };
@@ -152,19 +136,15 @@ export function Scene({ layers }: SceneProps) {
     };
   }, []);
 
-  // Update layer visibility - main toggle + sub-toggles
+  // Update layer visibility - two independent toggles
   useEffect(() => {
     if (!layerGroupsRef.current) return;
     // Building always visible
     layerGroupsRef.current.building.visible = true;
-    // Sub-toggles: each damage type controlled independently (but only when main flood is ON)
-    layerGroupsRef.current.floorDamage.visible = layers.flood && layers.floorDamage;
-    layerGroupsRef.current.wallDamage.visible = layers.flood && layers.wallDamage;
-    layerGroupsRef.current.ceilingDamage.visible = layers.flood && layers.ceilingDamage;
-
-    // Set target Y for ceiling damage animation (exploded view)
-    ceilingDamageTargetY.current = (layers.flood && layers.ceilingDamage) ? CEILING_EXPLODE_DISTANCE : 0;
-  }, [layers, CEILING_EXPLODE_DISTANCE]);
+    // Two independent damage toggles
+    layerGroupsRef.current.floorDamage.visible = layers.floorDamage;
+    layerGroupsRef.current.ceilingDamage.visible = layers.ceilingDamage;
+  }, [layers]);
 
   const buildHospital = (layerGroups: typeof layerGroupsRef.current) => {
     if (!layerGroups) return;
@@ -378,10 +358,8 @@ export function Scene({ layers }: SceneProps) {
       layerGroups.floorDamage.add(puddle);
     }
 
-    // === WALL DAMAGE (single building-wide base + top drip marks) ===
+    // === WALL BASE WICKING (part of floor damage - red) ===
     const wickingHeight = BUILDING.wickingHeight; // 2 units = 24 inches
-
-    // Single building-wide wall base damage (red, matches floor)
     const wallBaseMaterial = new THREE.MeshStandardMaterial({
       color: DAMAGE_COLORS.floor, // Red - matches floor damage
       transparent: true,
@@ -395,11 +373,116 @@ export function Scene({ layers }: SceneProps) {
     );
     const wallBase = new THREE.Mesh(wallBaseGeom, wallBaseMaterial);
     wallBase.position.set(BUILDING.width / 2, wickingHeight / 2, BUILDING.length / 2);
-    layerGroups.wallDamage.add(wallBase);
+    layerGroups.floorDamage.add(wallBase); // Part of floor damage toggle
 
-    // Wall top drip marks (water dripping from ceiling - on ALL walls)
+    // === CEILING DAMAGE (green) ===
+
+    // Building-wide ceiling overlay plane
+    const ceilingDamageMaterial = new THREE.MeshBasicMaterial({
+      color: DAMAGE_COLORS.ceiling, // Green
+      transparent: true,
+      opacity: 0.20,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const ceilingDamageGeom = new THREE.PlaneGeometry(
+      BUILDING.width,
+      BUILDING.length
+    );
+    const ceilingDamage = new THREE.Mesh(ceilingDamageGeom, ceilingDamageMaterial);
+    ceilingDamage.rotation.x = Math.PI / 2; // Horizontal, facing down
+    ceilingDamage.position.set(BUILDING.width / 2, BUILDING.floorHeight, BUILDING.length / 2);
+    layerGroups.ceilingDamage.add(ceilingDamage);
+
+    // Ceiling stains (similar to puddles but on ceiling)
+    const totalStains = 50;
+    const stainGeom = new THREE.CircleGeometry(1, 24);
+
+    for (let s = 0; s < totalStains; s++) {
+      const stainSeed = s * 173 + 89; // Different seed pattern from puddles
+
+      // Position across building
+      const stainX = seededRandom(stainSeed) * BUILDING.width;
+      const stainZ = seededRandom(stainSeed + 1) * BUILDING.length;
+
+      // Size variation (1-4 unit radius)
+      const stainRadius = 1 + seededRandom(stainSeed + 2) * 3;
+
+      // Ellipse effect
+      const scaleX = 0.7 + seededRandom(stainSeed + 3) * 0.6;
+      const scaleZ = 0.7 + seededRandom(stainSeed + 4) * 0.6;
+
+      // Opacity variation
+      const isDark = seededRandom(stainSeed + 5) > 0.7;
+      const opacity = isDark ? 0.25 + seededRandom(stainSeed + 6) * 0.15 : 0.15 + seededRandom(stainSeed + 6) * 0.10;
+
+      const stainMaterial = new THREE.MeshBasicMaterial({
+        color: DAMAGE_COLORS.ceiling,
+        transparent: true,
+        opacity: opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const stain = new THREE.Mesh(stainGeom.clone(), stainMaterial);
+      stain.rotation.x = Math.PI / 2; // Horizontal, facing down
+      stain.position.set(stainX, BUILDING.floorHeight - 0.01 - s * 0.001, stainZ);
+      stain.scale.set(stainRadius * scaleX, stainRadius * scaleZ, 1);
+      layerGroups.ceilingDamage.add(stain);
+    }
+
+    // Green wall top bands (behind drips - ceiling damage)
+    // Individual wall bands instead of solid volume
+    const wallTopHeight = 2; // 2 feet band at top of walls
+    const wallTopMaterial = new THREE.MeshStandardMaterial({
+      color: DAMAGE_COLORS.ceiling, // Green
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+    });
+
+    // Helper to create a wall top band
+    const createWallTopBand = (
+      wallLength: number,
+      wallX: number,
+      wallZ: number,
+      isHorizontalWall: boolean
+    ) => {
+      const bandGeom = new THREE.BoxGeometry(
+        isHorizontalWall ? wallLength : wallThickness * 1.1,
+        wallTopHeight,
+        isHorizontalWall ? wallThickness * 1.1 : wallLength
+      );
+      const band = new THREE.Mesh(bandGeom, wallTopMaterial);
+      band.position.set(
+        isHorizontalWall ? wallX + wallLength / 2 : wallX,
+        BUILDING.floorHeight - wallTopHeight / 2, // Y=9 (spans Y=8 to Y=10)
+        isHorizontalWall ? wallZ : wallZ + wallLength / 2
+      );
+      layerGroups.ceilingDamage.add(band);
+    };
+
+    // Add wall top bands to room walls
+    rooms.forEach((room) => {
+      // North wall of room
+      createWallTopBand(room.width, room.x, room.z + room.depth, true);
+      // South wall of room
+      createWallTopBand(room.width, room.x, room.z, true);
+      // West wall of room
+      createWallTopBand(room.depth, room.x, room.z, false);
+      // East wall of room
+      createWallTopBand(room.depth, room.x + room.width, room.z, false);
+    });
+
+    // Add wall top bands to perimeter walls
+    createWallTopBand(BUILDING.width, 0, BUILDING.length, true); // North perimeter
+    createWallTopBand(BUILDING.width, 0, 0, true); // South perimeter
+    createWallTopBand(BUILDING.length, BUILDING.width, 0, false); // East perimeter
+    createWallTopBand(BUILDING.length, 0, 0, false); // West perimeter
+
+    // Wall drip marks (green - part of ceiling damage)
     const dripMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.wall,
+      color: DAMAGE_COLORS.ceiling, // Green - ceiling/roof damage
       transparent: true,
       opacity: 0.5,
     });
@@ -409,17 +492,16 @@ export function Scene({ layers }: SceneProps) {
       wallLength: number,
       wallX: number,
       wallZ: number,
-      isHorizontalWall: boolean // true = runs along X axis, false = runs along Z axis
+      isHorizontalWall: boolean
     ) => {
-      const dripSpacing = 3; // One drip every 3 units
+      const dripSpacing = 3;
       const dripCount = Math.floor(wallLength / dripSpacing);
 
       for (let i = 0; i < dripCount; i++) {
         const dripSeed = (wallX * 1000 + wallZ * 100 + i) * 17;
-        const dripHeight = 0.8 + seededRandom(dripSeed) * 1.2; // 0.8-2.0 units tall
-        const dripWidth = 0.15 + seededRandom(dripSeed + 1) * 0.15; // 0.15-0.3 units wide
-
-        const offset = (i + 0.5) * dripSpacing + seededRandom(dripSeed + 2) * 1.5; // Slight randomness
+        const dripHeight = 0.8 + seededRandom(dripSeed) * 1.2;
+        const dripWidth = 0.15 + seededRandom(dripSeed + 1) * 0.15;
+        const offset = (i + 0.5) * dripSpacing + seededRandom(dripSeed + 2) * 1.5;
 
         const drip = new THREE.Mesh(
           new THREE.BoxGeometry(
@@ -435,27 +517,23 @@ export function Scene({ layers }: SceneProps) {
           BUILDING.floorHeight - dripHeight / 2 - 0.1,
           isHorizontalWall ? wallZ : wallZ + offset
         );
-        layerGroups.wallDamage.add(drip);
+        layerGroups.ceilingDamage.add(drip); // Part of ceiling damage toggle
       }
     };
 
     // Add drips to all room walls
     rooms.forEach((room) => {
-      // North wall drips (horizontal, at room.z + room.depth)
       createDripsAlongWall(room.width, room.x, room.z + room.depth, true);
-      // South wall drips (horizontal, at room.z)
       createDripsAlongWall(room.width, room.x, room.z, true);
-      // West wall drips (vertical, at room.x)
       createDripsAlongWall(room.depth, room.x, room.z, false);
-      // East wall drips (vertical, at room.x + room.width)
       createDripsAlongWall(room.depth, room.x + room.width, room.z, false);
     });
 
     // Add drips to perimeter walls
-    createDripsAlongWall(BUILDING.width, 0, BUILDING.length, true); // North
-    createDripsAlongWall(BUILDING.width, 0, 0, true); // South
-    createDripsAlongWall(BUILDING.length, BUILDING.width, 0, false); // East
-    createDripsAlongWall(BUILDING.length, 0, 0, false); // West
+    createDripsAlongWall(BUILDING.width, 0, BUILDING.length, true);
+    createDripsAlongWall(BUILDING.width, 0, 0, true);
+    createDripsAlongWall(BUILDING.length, BUILDING.width, 0, false);
+    createDripsAlongWall(BUILDING.length, 0, 0, false);
   };
 
   // Mouse handlers - 180° horizontal, ~78° vertical rotation
