@@ -10,12 +10,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **IICRC S500 Standards**: The Institute of Inspection Cleaning and Restoration Certification (IICRC) S500 is the industry standard for water damage restoration. This app visualizes **Category 3** water damage (contaminated/black water from storm surge), which requires the most aggressive remediation protocols.
 
-**Three Damage Zones**:
-1. **Floor Damage** (Red) - 3-6" standing flood water affecting vinyl flooring over concrete. Water trapped beneath vinyl requires substrate inspection and antimicrobial treatment.
-2. **Wall Damage** (Orange) - Moisture wicking in drywall up to 24" from flood level. Cavity insulation and drywall base require demolition per Category 3 protocols.
-3. **Ceiling Damage** (Yellow) - Roof penetrations from wind-driven rain causing leaks. Drop tiles/drywall and above-ceiling insulation affected.
+**Two Damage Zones** (independent toggles, building starts clean):
+1. **Floor Damage** (Red `#DC2626`) - Floor overlay, 80 scattered puddles, and 24" wall base wicking band. Represents 3-6" standing flood water affecting vinyl flooring over concrete.
+2. **Ceiling/Roof Damage** (Green `#22C55E`) - Ceiling overlay, 50 scattered stains, wall top bands (2ft at top of walls), and drip marks. Represents roof penetrations from wind-driven rain.
 
-**Assessment Workflow**: Users toggle damage layers to visualize affected areas, click rooms for detailed IICRC-compliant material notes, and review demolition requirements. The DetailPanel provides material-specific remediation guidance.
+**Assessment Workflow**: Users toggle two independent damage layers. Building starts clean with no damage visible. Each toggle includes a collapsible "Details" panel showing Materials and Damage information per IICRC S500 standards.
 
 ## Development Commands
 
@@ -47,38 +46,36 @@ npm run deploy
 ### Key Files
 ```
 src/react-app/
-├── App.tsx                    # Main app, state management for room selection
+├── App.tsx                    # Main app, state management
 ├── components/
-│   ├── Scene.tsx              # Three.js scene, instanced meshes, raycasting
-│   ├── Sidebar.tsx            # Layer toggles, statistics, room selection
-│   ├── DetailPanel.tsx        # IICRC S500 compliant room damage details
+│   ├── Scene.tsx              # Three.js scene, instanced meshes, 2 damage layer groups
+│   ├── Sidebar.tsx            # Two equal-weight toggles with Details panels
 │   └── LegendOverlay.tsx      # Color-coded damage legend
 ├── hooks/
-│   └── useLayers.ts           # 3 damage layer toggles (floor/wall/ceiling)
+│   └── useLayers.ts           # Two independent toggles (floorDamage, ceilingDamage)
 └── data/
     ├── roomData.ts            # Room definitions, DAMAGE_COLORS, BUILDING constants
     └── annotations.ts         # 4 strategic info markers
 src/worker/
 └── index.ts                   # Hono API: GET /api/stats
+capture.mjs                    # Playwright visual test script
 ```
 
 ### Key Patterns
 
-**Three Damage Layer Groups**: The scene organizes damage into 3 toggleable groups:
-- `floorDamage`: Flood water plane, floor damage overlays, fixture damage markers
-- `wallDamage`: Wall wicking bands (24" moisture height)
-- `ceilingDamage`: Ceiling leak stains, roof damage, above-ceiling infrastructure (HVAC/pipes), annotation sprites
+**Two Damage Layer Groups**: The scene organizes damage into 2 independently toggleable groups (building starts clean):
+- `floorDamage` (Red): Floor overlay plane, 80 scattered puddles, wall base wicking band (24" height)
+- `ceilingDamage` (Green): Ceiling overlay plane, 50 scattered stains, wall top bands (2ft at top of walls), drip marks on all walls
 
-**InstancedMesh Rendering**: Uses Three.js `InstancedMesh` for walls, floors, ceilings, fixtures, and damage overlays to render 80+ rooms efficiently.
+**Layer Visibility**: Two independent toggles with no master toggle. Each group's visibility controlled directly by `layers.floorDamage` and `layers.ceilingDamage`.
 
-**Room Selection**: Click detection via raycasting against invisible hitbox meshes in `roomMeshesRef`. Selected room data populates Sidebar and DetailPanel.
+**InstancedMesh Rendering**: Uses Three.js `InstancedMesh` for walls, floors, fixtures to render 80+ rooms efficiently.
 
 **Camera Control**: Default isometric view (45°) with 180° horizontal swing and ~78° vertical range (top-down to near-horizontal). Spherical coordinates in `sphericalRef` control orbit. Scroll to zoom (100-600 units).
 
-**Color System** (alarm-style for visibility):
-- Floor damage: Red family (`#DC2626`)
-- Wall damage: Orange family (`#F97316`)
-- Ceiling damage: Yellow/Amber family (`#FBBF24`)
+**Color System**:
+- Floor damage: Red (`#DC2626`) - floor overlay, puddles, wall base
+- Ceiling damage: Green (`#22C55E`) - ceiling overlay, stains, wall top bands, drips
 - Building surfaces: White/light gray (recessive)
 
 **Room Data Generation**: `roomData.ts` generates rooms programmatically with:
@@ -86,10 +83,10 @@ src/worker/
 - `getCeilingMaterial()`: Drop-tile vs drywall based on building section
 - `getDemolitionRequirements()`: Category 3 demo list based on damage
 
-**IICRC S500 Material Notes**: `DetailPanel.tsx` contains hardcoded remediation guidance:
-- `MATERIAL_NOTES` object: Material-specific restoration notes for `vinyl-concrete`, `drywall-insulated`, `drop-tile`, and `drywall` ceiling types
-- `ABOVE_CEILING_NOTE`: Standard text for HVAC and pipe insulation inspection
-- All language follows IICRC S500 terminology (e.g., "Category 3", "antimicrobial treatment", "porous materials")
+**IICRC S500 Material Notes**: `Sidebar.tsx` contains `DAMAGE_DETAILS` constant with material and damage information for each toggle:
+- Floor Damage: Vinyl sheet over concrete, Cat 3 penetration, 24" wall base wicking
+- Ceiling/Roof Damage: Drop tiles/drywall, roof leak damage, wall drip marks from water intrusion
+- All language follows IICRC S500 terminology (e.g., "Category 3", "antimicrobial treatment")
 
 ## WSL Development
 
