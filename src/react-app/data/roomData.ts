@@ -3,7 +3,7 @@
 // Scale: 1 unit = 1 foot (approximately)
 // Building is oriented vertically (north-south)
 
-export type RoomType = 'patient' | 'hallway' | 'mechanical' | 'utility' | 'storage' | 'bathroom';
+export type RoomType = 'patient' | 'hallway' | 'mechanical' | 'utility' | 'storage' | 'bathroom' | 'common' | 'pharmacy';
 
 export type DamageType = 'floor' | 'wall' | 'ceiling' | 'fixture' | 'infrastructure';
 
@@ -45,8 +45,8 @@ export const DAMAGE_COLORS = {
 export function getLeakSeverity(roomX: number, roomZ: number, roomId: string): LeakSeverity {
   // Exterior proximity (near edges = more leaks from wind-driven rain)
   const nearExterior = roomX < 35 || roomX > 115;
-  // Roof penetration zones (z near 150, 400, 600)
-  const nearPenetration = [150, 400, 600].some(z => Math.abs(roomZ - z) < 30);
+  // Roof penetration zones (z near 30, 280, 480 - adjusted for shifted coordinates)
+  const nearPenetration = [30, 280, 480].some(z => Math.abs(roomZ - z) < 30);
 
   if (nearExterior && nearPenetration) return 'severe';
   if (nearExterior || nearPenetration) return 'moderate';
@@ -77,13 +77,12 @@ export function getExteriorProximity(roomX: number, roomWidth: number): number {
 
 // Helper function: Ceiling material based on room position
 export function getCeilingMaterial(roomZ: number, roomType: RoomType): CeilingMaterial {
-  // Patient rooms in sections 1-3 (z > 400): drop-tile
-  // Patient rooms in sections 4-5 (z <= 400): drywall
-  // Hallways: drop-tile
+  // Patient rooms in sections 1-3 (z > 280): drop-tile
+  // Patient rooms in sections 4-5 (z <= 280): drywall
+  // (threshold adjusted for shifted coordinates)
   // Mechanical/Utility: drywall
-  if (roomType === 'hallway') return 'drop-tile';
-  if (roomType === 'mechanical' || roomType === 'utility') return 'drywall';
-  return roomZ > 400 ? 'drop-tile' : 'drywall';
+  if (roomType === 'mechanical' || roomType === 'utility' || roomType === 'common' || roomType === 'pharmacy') return 'drywall';
+  return roomZ > 280 ? 'drop-tile' : 'drywall';
 }
 
 // Helper function: Get above-ceiling elements based on room type
@@ -91,6 +90,8 @@ export function getAboveCeilingElements(roomType: RoomType): AboveCeilingElement
   if (roomType === 'patient') return ['hvac', 'pipe-insulation'];
   if (roomType === 'mechanical') return ['hvac', 'pipe-insulation', 'ceiling-insulation'];
   if (roomType === 'hallway') return ['hvac'];
+  if (roomType === 'common') return ['hvac'];
+  if (roomType === 'pharmacy') return ['hvac', 'pipe-insulation'];
   return [];
 }
 
@@ -135,10 +136,10 @@ export const SURFACE_COLORS = {
 
 // Building dimensions
 export const BUILDING = {
-  // Normalized from SVG: 2987 x 13339 becomes roughly 150ft x 670ft
-  // Scaling factor: ~20px per foot
+  // Normalized from SVG: 2987 x 13339 becomes roughly 150ft x 530ft
+  // Scaling factor: ~20px per foot (adjusted to eliminate dead zones)
   width: 150,
-  length: 670,
+  length: 530,
   floorHeight: 10,      // Floor to ceiling (walls Y=0 to Y=10)
   wallThickness: 0.5,   // 6 inches
   wickingHeight: 2,     // 24 inches moisture wicking
@@ -151,90 +152,90 @@ function generatePatientRooms(): Room[] {
   const roomWidth = 14;
   const roomDepth = 12;
 
-  // Section 1: Bottom section (rooms #1-#11) - around y=600-650
+  // Section 1: Bottom section (rooms #1-#11) - around z=475-520
   const section1Rooms = [
-    { id: '#1', x: 120, z: 620 },
-    { id: '#2', x: 120, z: 605 },
-    { id: '#3', x: 105, z: 620 },
-    { id: '#4', x: 105, z: 605 },
-    { id: '#5', x: 75, z: 620 },
-    { id: '#6', x: 75, z: 605 },
-    { id: '#7', x: 25, z: 640 },
-    { id: '#8', x: 40, z: 640 },
-    { id: '#9', x: 55, z: 640 },
-    { id: '#10', x: 70, z: 640 },
-    { id: '#11', x: 85, z: 595 },
+    { id: '#1', x: 120, z: 500 },
+    { id: '#2', x: 120, z: 485 },
+    { id: '#3', x: 105, z: 500 },
+    { id: '#4', x: 105, z: 485 },
+    { id: '#5', x: 75, z: 500 },
+    { id: '#6', x: 75, z: 485 },
+    { id: '#7', x: 25, z: 518 },
+    { id: '#8', x: 40, z: 518 },
+    { id: '#9', x: 55, z: 518 },
+    { id: '#10', x: 70, z: 518 },
+    { id: '#11', x: 85, z: 475 },
   ];
 
-  // Section 2: Lower-middle section (rooms #12-#20) - around y=520-580
+  // Section 2: Lower-middle section (rooms #12-#20) - around z=390-450
   const section2Rooms = [
-    { id: '#12', x: 120, z: 560 },
-    { id: '#13', x: 120, z: 545 },
-    { id: '#14', x: 105, z: 560 },
-    { id: '#15', x: 105, z: 545 },
-    { id: '#16', x: 25, z: 570 },
-    { id: '#17', x: 25, z: 555 },
-    { id: '#18', x: 25, z: 540 },
-    { id: '#19', x: 25, z: 525 },
-    { id: '#20', x: 25, z: 510 },
+    { id: '#12', x: 120, z: 440 },
+    { id: '#13', x: 120, z: 425 },
+    { id: '#14', x: 105, z: 440 },
+    { id: '#15', x: 105, z: 425 },
+    { id: '#16', x: 25, z: 450 },
+    { id: '#17', x: 25, z: 435 },
+    { id: '#18', x: 25, z: 420 },
+    { id: '#19', x: 25, z: 405 },
+    { id: '#20', x: 25, z: 390 },
   ];
 
-  // Section 3: Middle section (rooms #21-#35) - around y=400-500
+  // Section 3: Middle section (rooms #21-#35) - around z=300-375
   const section3Rooms = [
-    { id: '#21', x: 25, z: 495 },
-    { id: '#22', x: 25, z: 480 },
-    { id: '#23', x: 25, z: 465 },
-    { id: '#24', x: 25, z: 450 },
-    { id: '#25', x: 25, z: 435 },
-    { id: '#26', x: 75, z: 480 },
-    { id: '#27', x: 75, z: 465 },
-    { id: '#28', x: 105, z: 480 },
-    { id: '#29', x: 105, z: 465 },
-    { id: '#30', x: 120, z: 480 },
-    { id: '#31', x: 120, z: 465 },
-    { id: '#32', x: 120, z: 435 },
-    { id: '#33', x: 120, z: 420 },
-    { id: '#34', x: 105, z: 435 },
-    { id: '#35', x: 105, z: 420 },
+    { id: '#21', x: 25, z: 375 },
+    { id: '#22', x: 25, z: 360 },
+    { id: '#23', x: 25, z: 345 },
+    { id: '#24', x: 25, z: 330 },
+    { id: '#25', x: 25, z: 315 },
+    { id: '#26', x: 75, z: 360 },
+    { id: '#27', x: 75, z: 345 },
+    { id: '#28', x: 105, z: 360 },
+    { id: '#29', x: 105, z: 345 },
+    { id: '#30', x: 120, z: 360 },
+    { id: '#31', x: 120, z: 345 },
+    { id: '#32', x: 120, z: 315 },
+    { id: '#33', x: 120, z: 300 },
+    { id: '#34', x: 105, z: 315 },
+    { id: '#35', x: 105, z: 300 },
   ];
 
-  // Section 4: Upper-middle section (rooms #36-#50) - around y=280-380
+  // Section 4: Upper-middle section (rooms #36-#50) - around z=170-260
   const section4Rooms = [
-    { id: '#36', x: 25, z: 380 },
-    { id: '#37', x: 25, z: 365 },
-    { id: '#38', x: 25, z: 350 },
-    { id: '#39', x: 75, z: 370 },
-    { id: '#40', x: 75, z: 355 },
-    { id: '#41', x: 105, z: 370 },
-    { id: '#42', x: 105, z: 355 },
-    { id: '#43', x: 25, z: 320 },
-    { id: '#44', x: 25, z: 305 },
-    { id: '#45', x: 25, z: 290 },
-    { id: '#46', x: 105, z: 320 },
-    { id: '#47', x: 105, z: 305 },
-    { id: '#48', x: 120, z: 320 },
-    { id: '#49', x: 120, z: 305 },
-    { id: '#50', x: 120, z: 290 },
+    { id: '#36', x: 25, z: 260 },
+    { id: '#37', x: 25, z: 245 },
+    { id: '#38', x: 25, z: 230 },
+    { id: '#39', x: 75, z: 250 },
+    { id: '#40', x: 75, z: 235 },
+    { id: '#41', x: 105, z: 250 },
+    { id: '#42', x: 105, z: 235 },
+    { id: '#43', x: 25, z: 200 },
+    { id: '#44', x: 25, z: 185 },
+    { id: '#45', x: 25, z: 170 },
+    { id: '#46', x: 105, z: 200 },
+    { id: '#47', x: 105, z: 185 },
+    { id: '#48', x: 120, z: 200 },
+    { id: '#49', x: 120, z: 185 },
+    { id: '#50', x: 120, z: 170 },
   ];
 
-  // Section 5: Upper section (rooms #51-#66) - around y=100-260
+  // Section 5: Upper section (rooms #51-#66) - around z=10-130
   const section5Rooms = [
-    { id: '#51', x: 25, z: 250 },
-    { id: '#52', x: 25, z: 235 },
-    { id: '#53', x: 25, z: 220 },
-    { id: '#54', x: 25, z: 205 },
-    { id: '#55', x: 25, z: 190 },
-    { id: '#56', x: 75, z: 220 },
-    { id: '#57', x: 75, z: 205 },
-    { id: '#58', x: 105, z: 250 },
-    { id: '#59', x: 105, z: 235 },
-    { id: '#60', x: 120, z: 250 },
-    { id: '#61', x: 120, z: 235 },
-    { id: '#62', x: 120, z: 180 },
-    { id: '#63', x: 120, z: 165 },
-    { id: '#64', x: 105, z: 180 },
-    { id: '#65', x: 120, z: 130 },
-    { id: '#66', x: 105, z: 130 },
+    { id: '#51', x: 25, z: 130 },
+    { id: '#52', x: 25, z: 115 },
+    { id: '#53', x: 25, z: 100 },
+    { id: '#54', x: 25, z: 85 },
+    { id: '#55', x: 25, z: 70 },
+    { id: '#56', x: 75, z: 100 },
+    { id: '#57', x: 75, z: 85 },
+    { id: '#58', x: 105, z: 130 },
+    { id: '#59', x: 105, z: 115 },
+    { id: '#60', x: 120, z: 130 },
+    { id: '#61', x: 120, z: 115 },
+    { id: '#62', x: 120, z: 60 },
+    { id: '#63', x: 120, z: 45 },
+    { id: '#64', x: 105, z: 60 },
+    { id: '#65', x: 120, z: 10 },
+    { id: '#66', x: 105, z: 10 },
   ];
 
   const allSections = [
@@ -283,54 +284,7 @@ function generatePatientRooms(): Room[] {
   return rooms;
 }
 
-// Generate hallways
-function generateHallways(): Room[] {
-  const hallwayData = [
-    { id: 'Hallway 1', x: 60, z: 630, width: 60, depth: 8 },
-    { id: 'Hallway 1.1', x: 100, z: 590, width: 8, depth: 30 },
-    { id: 'Hallway 2', x: 60, z: 550, width: 60, depth: 8 },
-    { id: 'Hallway 2.1', x: 60, z: 470, width: 60, depth: 8 },
-    { id: 'Hallway 3', x: 60, z: 400, width: 60, depth: 8 },
-    { id: 'Hallway 4', x: 100, z: 340, width: 8, depth: 50 },
-    { id: 'Hallway 5', x: 60, z: 270, width: 60, depth: 8 },
-    { id: 'Hallway 6', x: 120, z: 200, width: 8, depth: 60 },
-    { id: 'Hallway 7', x: 60, z: 150, width: 60, depth: 8 },
-  ];
-
-  return hallwayData.map(h => {
-    const ceilingMat = getCeilingMaterial(h.z, 'hallway');
-    const leakSev = getLeakSeverity(h.x, h.z, h.id);
-    const hasWicking = true;
-    const fixtures: string[] = [];
-
-    // Build damageTypes based on actual damage conditions
-    const damageTypes: DamageType[] = ['floor', 'wall']; // Floor flooding affects all
-    if (leakSev !== 'none') {
-      damageTypes.push('ceiling');
-    }
-
-    return {
-      id: h.id,
-      name: h.id,
-      type: 'hallway' as const,
-      x: h.x,
-      z: h.z,
-      width: h.width,
-      depth: h.depth,
-      fixtures,
-      damageTypes,
-      // Enhanced fields
-      floorMaterial: 'vinyl-concrete' as const,
-      wallMaterial: 'drywall-insulated' as const,
-      ceilingMaterial: ceilingMat,
-      floodDepthRange: [3, 6] as [number, number],
-      hasWallWicking: hasWicking,
-      ceilingLeakSeverity: leakSev,
-      aboveCeilingElements: getAboveCeilingElements('hallway'),
-      requiresDemolition: getDemolitionRequirements(ceilingMat, leakSev, hasWicking, fixtures),
-    };
-  });
-}
+// Note: Hallways removed - corridors are negative space between properly-positioned rooms
 
 // Generate utility and mechanical rooms
 function generateUtilityRooms(): Room[] {
@@ -340,21 +294,10 @@ function generateUtilityRooms(): Room[] {
       name: 'Mechanical Room 1',
       type: 'mechanical' as const,
       x: 60,
-      z: 260,
+      z: 140,
       width: 20,
       depth: 15,
       fixtures: ['hvac_unit', 'pump', 'electrical_panel', 'water_heater'],
-      hasFixtureDamage: true,
-    },
-    {
-      id: 'Utility 1',
-      name: 'Utility Room 1',
-      type: 'utility' as const,
-      x: 45,
-      z: 580,
-      width: 10,
-      depth: 10,
-      fixtures: ['sink', 'cabinet'],
       hasFixtureDamage: true,
     },
     {
@@ -362,7 +305,7 @@ function generateUtilityRooms(): Room[] {
       name: 'Utility Room 2',
       type: 'utility' as const,
       x: 45,
-      z: 420,
+      z: 300,
       width: 10,
       depth: 10,
       fixtures: ['sink', 'cabinet'],
@@ -373,18 +316,7 @@ function generateUtilityRooms(): Room[] {
       name: 'Storage Room 1',
       type: 'storage' as const,
       x: 90,
-      z: 500,
-      width: 12,
-      depth: 10,
-      fixtures: ['cabinet', 'cabinet'],
-      hasFixtureDamage: false,  // Storage cabinets - non-porous assumed
-    },
-    {
-      id: 'Storage 2',
-      name: 'Storage Room 2',
-      type: 'storage' as const,
-      x: 90,
-      z: 350,
+      z: 380,
       width: 12,
       depth: 10,
       fixtures: ['cabinet', 'cabinet'],
@@ -432,9 +364,186 @@ function generateUtilityRooms(): Room[] {
   });
 }
 
-// All rooms combined
+// Generate larger rooms (nurse stations, cafeteria, waiting areas, etc.)
+function generateLargerRooms(): Room[] {
+  const largerRoomData = [
+    {
+      id: 'Nurse Station 1',
+      name: 'Nurse Station 1',
+      type: 'common' as const,
+      x: 45,
+      z: 455,
+      width: 20,
+      depth: 18,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Nurse Station 2',
+      name: 'Nurse Station 2',
+      type: 'common' as const,
+      x: 45,
+      z: 335,
+      width: 22,
+      depth: 20,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Nurse Station 3',
+      name: 'Nurse Station 3',
+      type: 'common' as const,
+      x: 55,
+      z: 210,
+      width: 20,
+      depth: 18,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Cafeteria',
+      name: 'Cafeteria',
+      type: 'common' as const,
+      x: 45,
+      z: 280,
+      width: 30,
+      depth: 25,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Waiting Area 1',
+      name: 'Waiting Area 1',
+      type: 'common' as const,
+      x: 45,
+      z: 85,
+      width: 28,
+      depth: 24,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: false,
+    },
+    {
+      id: 'Waiting Area 2',
+      name: 'Waiting Area 2',
+      type: 'common' as const,
+      x: 55,
+      z: 155,
+      width: 25,
+      depth: 20,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: false,
+    },
+    {
+      id: 'Pharmacy',
+      name: 'Pharmacy',
+      type: 'pharmacy' as const,
+      x: 55,
+      z: 310,
+      width: 22,
+      depth: 18,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Medical Records',
+      name: 'Medical Records',
+      type: 'storage' as const,
+      x: 55,
+      z: 395,
+      width: 25,
+      depth: 22,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: false,
+    },
+    {
+      id: 'Linen Storage',
+      name: 'Linen Storage',
+      type: 'storage' as const,
+      x: 90,
+      z: 395,
+      width: 20,
+      depth: 18,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: false,
+    },
+    {
+      id: 'Large Mechanical',
+      name: 'Large Mechanical Room',
+      type: 'mechanical' as const,
+      x: 55,
+      z: 430,
+      width: 28,
+      depth: 20,
+      fixtures: ['hvac_unit', 'pump'],
+      hasFixtureDamage: true,
+    },
+    {
+      id: 'Supply Room',
+      name: 'Supply Room',
+      type: 'storage' as const,
+      x: 55,
+      z: 175,
+      width: 20,
+      depth: 18,
+      fixtures: ['cabinet'],
+      hasFixtureDamage: false,
+    },
+    {
+      id: 'Break Room',
+      name: 'Break Room',
+      type: 'common' as const,
+      x: 55,
+      z: 35,
+      width: 20,
+      depth: 18,
+      fixtures: ['sink', 'cabinet'],
+      hasFixtureDamage: true,
+    },
+  ];
+
+  return largerRoomData.map(u => {
+    const ceilingMat = getCeilingMaterial(u.z, u.type);
+    const leakSev = getLeakSeverity(u.x, u.z, u.id);
+    const hasWicking = true; // All flood-affected rooms
+
+    // Build damageTypes based on actual damage conditions
+    const damageTypes: DamageType[] = ['floor', 'wall']; // Floor flooding affects all
+    if (u.hasFixtureDamage) {
+      damageTypes.push('fixture');
+    }
+    if (leakSev !== 'none') {
+      damageTypes.push('ceiling');
+      if (u.type === 'mechanical') {
+        damageTypes.push('infrastructure');
+      }
+    }
+
+    return {
+      id: u.id,
+      name: u.name,
+      type: u.type,
+      x: u.x,
+      z: u.z,
+      width: u.width,
+      depth: u.depth,
+      fixtures: u.fixtures,
+      damageTypes,
+      // Enhanced fields
+      floorMaterial: 'vinyl-concrete' as const,
+      wallMaterial: 'drywall-insulated' as const,
+      ceilingMaterial: ceilingMat,
+      floodDepthRange: [3, 6] as [number, number],
+      hasWallWicking: hasWicking,
+      ceilingLeakSeverity: leakSev,
+      aboveCeilingElements: getAboveCeilingElements(u.type),
+      requiresDemolition: getDemolitionRequirements(ceilingMat, leakSev, hasWicking, u.fixtures),
+    };
+  });
+}
+
+// All rooms combined (hallways are negative space between rooms, not rendered)
 export const rooms: Room[] = [
   ...generatePatientRooms(),
-  ...generateHallways(),
   ...generateUtilityRooms(),
+  ...generateLargerRooms(),
 ];

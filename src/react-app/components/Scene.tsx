@@ -170,7 +170,7 @@ export function Scene({ layers }: SceneProps) {
     const wallCount = rooms.length * 4;
     const floorCount = rooms.length;
 
-    let toiletCount = 0, sinkCount = 0, cabinetCount = 0;
+    let toiletCount = 0, sinkCount = 0, cabinetCount = 0, bedCount = 0;
 
     rooms.forEach(room => {
       room.fixtures.forEach(f => {
@@ -178,14 +178,20 @@ export function Scene({ layers }: SceneProps) {
         else if (f === 'sink') sinkCount++;
         else if (f === 'cabinet') cabinetCount++;
       });
+      if (room.type === 'patient') bedCount++;
     });
 
     // === CREATE UNIT GEOMETRIES ===
     const unitWallGeom = new THREE.BoxGeometry(1, 1, 1);
     const unitPlaneGeom = new THREE.PlaneGeometry(1, 1);
-    const toiletGeom = new THREE.BoxGeometry(1.5, 1.5, 2);
-    const sinkGeom = new THREE.BoxGeometry(2, 2.5, 1.5);
+    // Toilet: Cylinder for oval bowl appearance (from isometric view)
+    const toiletGeom = new THREE.CylinderGeometry(0.75, 0.75, 1.5, 12);
+    // Sink: Tapered cylinder for basin appearance
+    const sinkGeom = new THREE.CylinderGeometry(0.8, 0.6, 2.5, 8);
     const cabinetGeom = new THREE.BoxGeometry(3, 3, 1.5);
+    // Hospital bed: 3ft wide × 6.5ft long × 1.5ft high
+    const bedGeom = new THREE.BoxGeometry(3, 1.5, 6.5);
+    const bedMaterial = new THREE.MeshStandardMaterial({ color: 0xE5E7EB }); // Gray-200
 
     // === CREATE INSTANCED MESHES ===
     // Building structure (always visible)
@@ -202,13 +208,15 @@ export function Scene({ layers }: SceneProps) {
     const toiletsInstanced = new THREE.InstancedMesh(toiletGeom, fixtureMaterial, Math.max(1, toiletCount));
     const sinksInstanced = new THREE.InstancedMesh(sinkGeom, fixtureMaterial, Math.max(1, sinkCount));
     const cabinetsInstanced = new THREE.InstancedMesh(cabinetGeom, cabinetMaterial, Math.max(1, cabinetCount));
+    const bedsInstanced = new THREE.InstancedMesh(bedGeom, bedMaterial, Math.max(1, bedCount));
     layerGroups.building.add(toiletsInstanced);
     layerGroups.building.add(sinksInstanced);
     layerGroups.building.add(cabinetsInstanced);
+    layerGroups.building.add(bedsInstanced);
 
     // === SET INSTANCE TRANSFORMS ===
     let wallIdx = 0, floorIdx = 0;
-    let toiletIdx = 0, sinkIdx = 0, cabinetIdx = 0;
+    let toiletIdx = 0, sinkIdx = 0, cabinetIdx = 0, bedIdx = 0;
 
     rooms.forEach((room) => {
       const cx = room.x + room.width / 2;
@@ -252,6 +260,13 @@ export function Scene({ layers }: SceneProps) {
           cabinetsInstanced.setMatrixAt(cabinetIdx++, createMatrix(fixtureX, 1.5, fixtureZ));
         }
       });
+
+      // Hospital bed (patient rooms only) - positioned at front-center of room
+      if (room.type === 'patient') {
+        const bedX = room.x + room.width / 2;  // Center of room width
+        const bedZ = room.z + room.depth / 2 - 1;  // Front half of room
+        bedsInstanced.setMatrixAt(bedIdx++, createMatrix(bedX, 0.75, bedZ));
+      }
     });
 
     // Update instance matrices
@@ -260,6 +275,7 @@ export function Scene({ layers }: SceneProps) {
     toiletsInstanced.instanceMatrix.needsUpdate = true;
     sinksInstanced.instanceMatrix.needsUpdate = true;
     cabinetsInstanced.instanceMatrix.needsUpdate = true;
+    bedsInstanced.instanceMatrix.needsUpdate = true;
 
     // Exterior perimeter walls (solid like interior walls)
     const perimeterWallHeight = BUILDING.floorHeight;
