@@ -1,4 +1,4 @@
-import { DAMAGE_COLORS, SURFACE_COLORS } from '../data/roomData';
+import { DAMAGE_COLORS } from '../data/roomData';
 
 interface LegendOverlayProps {
   isOpen: boolean;
@@ -41,36 +41,12 @@ export function LegendOverlay({ isOpen, onClose }: LegendOverlayProps) {
               <LegendItem
                 color={DAMAGE_COLORS.wall}
                 label="Wall Damage"
-                description="Moisture wicking in drywall (24&quot; height)"
+                description="Moisture wicking, ceiling drip marks"
               />
               <LegendItem
                 color={DAMAGE_COLORS.ceiling}
                 label="Ceiling Damage"
                 description="Roof leaks, infrastructure damage"
-              />
-            </div>
-          </section>
-
-          {/* Building Elements */}
-          <section>
-            <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
-              Building Elements
-            </h4>
-            <div className="space-y-2">
-              <LegendItem
-                color={SURFACE_COLORS.wall}
-                label="Walls"
-                description="Undamaged wall surfaces"
-              />
-              <LegendItem
-                color={SURFACE_COLORS.floor}
-                label="Floors"
-                description="Undamaged floor surfaces"
-              />
-              <LegendItem
-                color={SURFACE_COLORS.floodWater}
-                label="Flood Water"
-                description="Standing water (Category 3)"
               />
             </div>
           </section>

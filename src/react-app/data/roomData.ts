@@ -35,127 +35,10 @@ export interface Room {
 }
 
 // Alarm-style damage colors for visual clarity
-// Red = Floor damage, Orange = Wall damage, Yellow = Ceiling damage
+// Red = Floor damage, Orange = Wall damage
 export const DAMAGE_COLORS = {
-  // Floor damage - RED family
-  floor: '#DC2626',          // Red (Tailwind red-600)
-  floodDeep: '#DC2626',      // Red
-  floodMedium: '#EF4444',    // Lighter red
-  floodShallow: '#F87171',   // Even lighter red
-  fixture: '#B91C1C',        // Darker red for fixtures
-
-  // Wall damage - ORANGE family
-  wall: '#F97316',           // Orange (Tailwind orange-500)
-  wallWicking: '#F97316',    // Orange
-
-  // Ceiling damage - YELLOW family
-  ceiling: '#FBBF24',        // Yellow/Amber (Tailwind yellow-400)
-  ceilingSevere: '#F59E0B',  // Amber-500
-  ceilingModerate: '#FBBF24', // Yellow-400
-
-  // Above-ceiling infrastructure (also yellow family)
-  hvac: '#FCD34D',           // Yellow-300
-  pipeInsulation: '#FDE68A', // Yellow-200
-  ceilingInsulation: '#FEF3C7', // Yellow-100
-
-  // Demolition overlay
-  demolition: '#DC2626',     // Red at 30% opacity
-  infrastructure: '#FCD34D'  // Yellow for infrastructure
-} as const;
-
-// Damage descriptions for legend (Category 3 aligned)
-export const DAMAGE_DESCRIPTIONS = {
-  floodDeep: {
-    label: 'Deep Flood (5-6")',
-    material: 'Vinyl sheet over concrete',
-    description: 'Category 3 standing water - deepest areas',
-    color: DAMAGE_COLORS.floodDeep,
-  },
-  floodMedium: {
-    label: 'Medium Flood (4-5")',
-    material: 'Vinyl sheet over concrete',
-    description: 'Category 3 standing water - mid depth',
-    color: DAMAGE_COLORS.floodMedium,
-  },
-  floodShallow: {
-    label: 'Shallow Flood (3-4")',
-    material: 'Vinyl sheet over concrete',
-    description: 'Category 3 standing water - perimeter',
-    color: DAMAGE_COLORS.floodShallow,
-  },
-  wallWicking: {
-    label: 'Wall Wicking',
-    material: 'Drywall + cavity insulation',
-    description: 'Moisture wicking 0-24" from flood level',
-    color: DAMAGE_COLORS.wallWicking,
-  },
-  ceilingSevere: {
-    label: 'Severe Leak',
-    material: 'Drop tiles / drywall',
-    description: 'Direct roof leak impact zone',
-    color: DAMAGE_COLORS.ceilingSevere,
-  },
-  ceilingModerate: {
-    label: 'Moderate Leak',
-    material: 'Drop tiles / drywall',
-    description: 'Secondary moisture zone',
-    color: DAMAGE_COLORS.ceilingModerate,
-  },
-  hvac: {
-    label: 'HVAC Ducting',
-    material: 'Metal duct with insulation',
-    description: 'Above-ceiling duct affected',
-    color: DAMAGE_COLORS.hvac,
-  },
-  pipeInsulation: {
-    label: 'Pipe Insulation',
-    material: 'Hydronic pipe wrapping',
-    description: 'Above-ceiling pipe insulation affected',
-    color: DAMAGE_COLORS.pipeInsulation,
-  },
-  ceilingInsulation: {
-    label: 'Ceiling Insulation',
-    material: 'Plenum insulation',
-    description: 'Above-ceiling insulation affected',
-    color: DAMAGE_COLORS.ceilingInsulation,
-  },
-  demolition: {
-    label: 'Demolition Required',
-    material: 'Porous materials',
-    description: 'Materials requiring removal per Category 3 standards',
-    color: DAMAGE_COLORS.demolition,
-  },
-  // Legacy entries for backward compatibility
-  floor: {
-    label: 'Flooring',
-    material: 'Vinyl sheet over concrete',
-    description: 'Water trapped between vinyl and substrate (3-6")',
-    color: DAMAGE_COLORS.floor,
-  },
-  wall: {
-    label: 'Walls',
-    material: 'Drywall + cavity insulation',
-    description: 'Moisture wicking 0-24" from flood level',
-    color: DAMAGE_COLORS.wall,
-  },
-  ceiling: {
-    label: 'Ceiling',
-    material: 'Drop tiles + drywall',
-    description: 'Water stains from roof leaks',
-    color: DAMAGE_COLORS.ceiling,
-  },
-  fixture: {
-    label: 'Fixtures',
-    material: 'Sinks, toilets, cabinets',
-    description: 'Direct water contact damage',
-    color: DAMAGE_COLORS.fixture,
-  },
-  infrastructure: {
-    label: 'Above-Ceiling',
-    material: 'HVAC ducts, hydronic pipes',
-    description: 'Insulation damage from roof leaks',
-    color: DAMAGE_COLORS.infrastructure,
-  },
+  floor: '#DC2626',  // Red (Tailwind red-600)
+  wall: '#F97316',   // Orange (Tailwind orange-500)
 } as const;
 
 // Helper function: Deterministic leak severity based on room position
@@ -170,6 +53,26 @@ export function getLeakSeverity(roomX: number, roomZ: number, roomId: string): L
   // Interior rooms: deterministic 30% based on room ID hash
   const hash = roomId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
   return hash % 10 < 3 ? 'moderate' : 'none';
+}
+
+/**
+ * Calculate damage intensity (0-1) based on distance from exterior walls.
+ * Exterior rooms (within 35ft of edge) = 1.0 (full intensity)
+ * Interior rooms = 0.3-0.7 based on distance
+ */
+export function getExteriorProximity(roomX: number, roomWidth: number): number {
+  const roomCenterX = roomX + roomWidth / 2;
+  const distanceFromWest = roomCenterX;
+  const distanceFromEast = BUILDING.width - roomCenterX;
+  const minDistance = Math.min(distanceFromWest, distanceFromEast);
+
+  // Within 35ft of exterior = full intensity
+  if (minDistance < 35) return 1.0;
+
+  // Interior rooms: gradient from 0.7 (near edge zone) to 0.3 (center)
+  const interiorZone = BUILDING.width / 2 - 35; // ~40ft
+  const normalizedDistance = (minDistance - 35) / interiorZone;
+  return 0.7 - (normalizedDistance * 0.4); // 0.7 → 0.3
 }
 
 // Helper function: Ceiling material based on room position
@@ -227,10 +130,7 @@ export function getDemolitionRequirements(
 // Clean building surface colors (neutral/recessive)
 export const SURFACE_COLORS = {
   wall: '#FFFFFF',          // Pure white
-  floor: '#F5F5F4',         // Stone-50 (very light warm gray)
-  ceiling: '#FAFAF9',       // Stone-50 variant
-  roof: '#E7E5E4',          // Stone-200 (slightly visible)
-  floodWater: '#60A5FA'     // Blue-400 (more visible water)
+  floor: '#A8A29E',         // Stone-400 - darker gray for flood contrast
 } as const;
 
 // Building dimensions

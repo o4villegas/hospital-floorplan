@@ -1,13 +1,16 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as THREE from 'three';
-import { rooms, Room, BUILDING, DAMAGE_COLORS, SURFACE_COLORS } from '../data/roomData';
-import { annotations } from '../data/annotations';
+import { rooms, BUILDING, DAMAGE_COLORS, SURFACE_COLORS } from '../data/roomData';
 import { LayerState } from '../hooks/useLayers';
+
+// Seeded random number generator for deterministic variations
+const seededRandom = (seed: number): number => {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+};
 
 interface SceneProps {
   layers: LayerState;
-  onRoomSelect: (room: Room | null) => void;
-  selectedRoom: Room | null;
 }
 
 // Helper to create transformation matrix
@@ -32,7 +35,7 @@ const THETA_LIMIT = Math.PI / 2;   // ±90° horizontal = 180° total swing
 const PHI_MIN = 0.1;               // ~6° from vertical (near top-down)
 const PHI_MAX = Math.PI / 2 - 0.1; // ~84° from vertical (near horizontal)
 
-export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
+export function Scene({ layers }: SceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -45,21 +48,17 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
   const sphericalRef = useRef({ ...DEFAULT_CAMERA });
   const targetRef = useRef(new THREE.Vector3(BUILDING.width / 2, 0, BUILDING.length / 2));
 
-  // Room meshes for raycasting
-  const roomMeshesRef = useRef<Map<string, THREE.Mesh>>(new Map());
-  const raycasterRef = useRef(new THREE.Raycaster());
-  const mouseRef = useRef(new THREE.Vector2());
-
-  // Layer groups - simplified for 3 damage toggles
+  // Layer groups - building + 3 damage sub-groups
   const layerGroupsRef = useRef<{
-    building: THREE.Group;     // Always visible: walls, floors, ceiling, roof
-    floorDamage: THREE.Group;  // Floor damage + fixtures + flood water
-    wallDamage: THREE.Group;   // Wall wicking bands
-    ceilingDamage: THREE.Group; // Ceiling leaks + infrastructure + annotations
+    building: THREE.Group;      // Always visible: walls, floors, ceiling, roof
+    floorDamage: THREE.Group;   // Floor damage meshes
+    wallDamage: THREE.Group;    // Wall damage (base wicking + top drips)
+    ceilingDamage: THREE.Group; // Ceiling/roof/infrastructure damage
   } | null>(null);
 
-  // Flood water animation
-  const floodWaterRef = useRef<THREE.Mesh | null>(null);
+  // Animation state for ceiling explode view
+  const ceilingDamageTargetY = useRef(0);
+  const CEILING_EXPLODE_DISTANCE = 18; // Units to lift ceiling damage group when toggled
 
   // Initialize scene
   useEffect(() => {
@@ -97,12 +96,12 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     directionalLight.castShadow = true;
     scene.add(directionalLight);
 
-    // Create layer groups - 3 damage groups + 1 building group
+    // Create layer groups - building + 3 damage sub-groups
     const layerGroups = {
       building: new THREE.Group(),      // Always visible
-      floorDamage: new THREE.Group(),   // Toggle: floor damage + fixtures + water
-      wallDamage: new THREE.Group(),    // Toggle: wall wicking
-      ceilingDamage: new THREE.Group(), // Toggle: ceiling + infrastructure + annotations
+      floorDamage: new THREE.Group(),   // Floor damage overlays
+      wallDamage: new THREE.Group(),    // Wall damage (base wicking + top drips)
+      ceilingDamage: new THREE.Group(), // Ceiling/roof/infrastructure
     };
     layerGroupsRef.current = layerGroups;
     Object.values(layerGroups).forEach(group => scene.add(group));
@@ -122,10 +121,14 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
       camera.position.z = target.z + radius * Math.sin(phi) * Math.cos(theta);
       camera.lookAt(target);
 
-      // Animate flood water
-      if (floodWaterRef.current) {
-        const material = floodWaterRef.current.material as THREE.MeshStandardMaterial;
-        material.opacity = 0.4 + Math.sin(Date.now() * 0.002) * 0.1;
+      // Animate ceiling damage group Y position (smooth lerp for exploded view)
+      if (layerGroupsRef.current) {
+        const currentY = layerGroupsRef.current.ceilingDamage.position.y;
+        const targetY = ceilingDamageTargetY.current;
+        if (Math.abs(currentY - targetY) > 0.01) {
+          layerGroupsRef.current.ceilingDamage.position.y =
+            currentY + (targetY - currentY) * 0.08;
+        }
       }
 
       renderer.render(scene, camera);
@@ -149,86 +152,45 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     };
   }, []);
 
-  // Update layer visibility - simplified for 3 damage toggles
+  // Update layer visibility - main toggle + sub-toggles
   useEffect(() => {
     if (!layerGroupsRef.current) return;
     // Building always visible
     layerGroupsRef.current.building.visible = true;
-    // Damage layers controlled by toggles
-    layerGroupsRef.current.floorDamage.visible = layers.floorDamage;
-    layerGroupsRef.current.wallDamage.visible = layers.wallDamage;
-    layerGroupsRef.current.ceilingDamage.visible = layers.ceilingDamage;
-  }, [layers]);
+    // Sub-toggles: each damage type controlled independently (but only when main flood is ON)
+    layerGroupsRef.current.floorDamage.visible = layers.flood && layers.floorDamage;
+    layerGroupsRef.current.wallDamage.visible = layers.flood && layers.wallDamage;
+    layerGroupsRef.current.ceilingDamage.visible = layers.flood && layers.ceilingDamage;
+
+    // Set target Y for ceiling damage animation (exploded view)
+    ceilingDamageTargetY.current = (layers.flood && layers.ceilingDamage) ? CEILING_EXPLODE_DISTANCE : 0;
+  }, [layers, CEILING_EXPLODE_DISTANCE]);
 
   const buildHospital = (layerGroups: typeof layerGroupsRef.current) => {
     if (!layerGroups) return;
 
     const wallHeight = BUILDING.floorHeight;
     const wallThickness = BUILDING.wallThickness;
-    const wickHeight = BUILDING.wickingHeight;
 
-    // === MATERIALS - Updated colors ===
-    // Building materials (white/light tan - recessive)
+    // === MATERIALS - Building surfaces (white/light - recessive) ===
     const wallMaterial = new THREE.MeshStandardMaterial({
-      color: SURFACE_COLORS.wall,  // Pure white
+      color: SURFACE_COLORS.wall,
       roughness: 0.5,
     });
     const floorMaterial = new THREE.MeshStandardMaterial({
-      color: SURFACE_COLORS.floor,  // Light warm gray
+      color: SURFACE_COLORS.floor,
       roughness: 0.8,
-    });
-    const ceilingMaterial = new THREE.MeshStandardMaterial({
-      color: SURFACE_COLORS.ceiling,
-      transparent: true,
-      opacity: 0.8,
       side: THREE.DoubleSide,
     });
 
-    // Damage materials (Red/Orange/Yellow - alarm colors)
-    const damageFloorMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.floor,  // Red
-      transparent: true,
-      opacity: 0.7,
-    });
-    const damageWallMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.wall,  // Orange
-      transparent: true,
-      opacity: 0.8,
-    });
-    const damageCeilingMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.ceiling,  // Yellow
-      transparent: true,
-      opacity: 0.7,
-    });
-    const damageFixtureMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.fixture,  // Darker red
-    });
-    const damageInfrastructureMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.infrastructure,  // Yellow
-    });
     const fixtureMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
     const cabinetMaterial = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
-
-    // Above-ceiling infrastructure materials
-    const ductMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.hvac,
-      metalness: 0.6,
-      roughness: 0.4,
-    });
-    const pipeMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.pipeInsulation,
-      roughness: 0.5,
-    });
 
     // === COUNT INSTANCES ===
     const wallCount = rooms.length * 4;
     const floorCount = rooms.length;
-    const ceilingCount = rooms.length;
 
     let toiletCount = 0, sinkCount = 0, cabinetCount = 0;
-    let floorDamageCount = 0, wallDamageCount = 0;
-    let ceilingDamageCount = 0;  // Rooms with actual ceiling leaks
-    let fixtureDamageCount = 0;  // Rooms with fixture damage
 
     rooms.forEach(room => {
       room.fixtures.forEach(f => {
@@ -236,14 +198,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
         else if (f === 'sink') sinkCount++;
         else if (f === 'cabinet') cabinetCount++;
       });
-      if (room.damageTypes.includes('floor')) floorDamageCount++;
-      if (room.damageTypes.includes('wall')) wallDamageCount++;
-      // Count ceiling damage based on actual leak severity, not damageTypes
-      if (room.ceilingLeakSeverity !== 'none') ceilingDamageCount++;
-      // Count fixture damage only for rooms that have it
-      if (room.damageTypes.includes('fixture')) {
-        fixtureDamageCount += room.fixtures.filter(f => ['toilet', 'sink', 'cabinet'].includes(f)).length;
-      }
     });
 
     // === CREATE UNIT GEOMETRIES ===
@@ -252,8 +206,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     const toiletGeom = new THREE.BoxGeometry(1.5, 1.5, 2);
     const sinkGeom = new THREE.BoxGeometry(2, 2.5, 1.5);
     const cabinetGeom = new THREE.BoxGeometry(3, 3, 1.5);
-    const ductGeom = new THREE.BoxGeometry(1, 1, 2);
-    const pipeGeom = new THREE.CylinderGeometry(0.3, 0.3, 1, 8);
 
     // === CREATE INSTANCED MESHES ===
     // Building structure (always visible)
@@ -266,18 +218,7 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     floorsInstanced.receiveShadow = true;
     layerGroups.building.add(floorsInstanced);
 
-    const ceilingsInstanced = new THREE.InstancedMesh(unitPlaneGeom, ceilingMaterial, ceilingCount);
-    layerGroups.building.add(ceilingsInstanced);
-
-    // Floor damage group
-    const floorDamageInstanced = new THREE.InstancedMesh(unitPlaneGeom, damageFloorMaterial, floorDamageCount);
-    layerGroups.floorDamage.add(floorDamageInstanced);
-
-    // Wall damage group
-    const wallDamageInstanced = new THREE.InstancedMesh(unitWallGeom, damageWallMaterial, wallDamageCount * 4);
-    layerGroups.wallDamage.add(wallDamageInstanced);
-
-    // Fixtures (always visible in building group - damage markers are separate)
+    // Fixtures (always visible in building group)
     const toiletsInstanced = new THREE.InstancedMesh(toiletGeom, fixtureMaterial, Math.max(1, toiletCount));
     const sinksInstanced = new THREE.InstancedMesh(sinkGeom, fixtureMaterial, Math.max(1, sinkCount));
     const cabinetsInstanced = new THREE.InstancedMesh(cabinetGeom, cabinetMaterial, Math.max(1, cabinetCount));
@@ -285,33 +226,9 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     layerGroups.building.add(sinksInstanced);
     layerGroups.building.add(cabinetsInstanced);
 
-    // Fixture damage markers (in floor damage group) - only for rooms with fixture damage
-    const fixtureDamageInstanced = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 0.5, 1),
-      damageFixtureMaterial,
-      Math.max(1, fixtureDamageCount)
-    );
-    layerGroups.floorDamage.add(fixtureDamageInstanced);
-
-    // Infrastructure (in ceiling damage group) - only for rooms with actual ceiling leaks
-    const ductsInstanced = new THREE.InstancedMesh(ductGeom, ductMaterial, Math.max(1, ceilingDamageCount));
-    const pipesInstanced = new THREE.InstancedMesh(pipeGeom, pipeMaterial, Math.max(1, ceilingDamageCount));
-    layerGroups.ceilingDamage.add(ductsInstanced);
-    layerGroups.ceilingDamage.add(pipesInstanced);
-
-    const infraDamageInstanced = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(1, 0.5, 1),
-      damageInfrastructureMaterial,
-      Math.max(1, ceilingDamageCount)
-    );
-    layerGroups.ceilingDamage.add(infraDamageInstanced);
-
     // === SET INSTANCE TRANSFORMS ===
-    let wallIdx = 0, floorIdx = 0, ceilingIdx = 0;
-    let floorDamageIdx = 0, wallDamageIdx = 0;
+    let wallIdx = 0, floorIdx = 0;
     let toiletIdx = 0, sinkIdx = 0, cabinetIdx = 0;
-    let fixtureDamageIdx = 0;
-    let ductIdx = 0, pipeIdx = 0, infraDamageIdx = 0;
 
     rooms.forEach((room) => {
       const cx = room.x + room.width / 2;
@@ -322,13 +239,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
         cx, 0.01, cz,
         room.width, room.depth, 1,
         -Math.PI / 2, 0, 0
-      ));
-
-      // Ceiling
-      ceilingsInstanced.setMatrixAt(ceilingIdx++, createMatrix(
-        cx, BUILDING.ceilingHeight, cz,
-        room.width - wallThickness * 2, room.depth - wallThickness * 2, 1,
-        Math.PI / 2, 0, 0
       ));
 
       // Walls
@@ -349,35 +259,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
         wallThickness, wallHeight, room.depth
       ));
 
-      // Floor damage
-      if (room.damageTypes.includes('floor')) {
-        floorDamageInstanced.setMatrixAt(floorDamageIdx++, createMatrix(
-          cx, 0.02, cz,
-          room.width, room.depth, 1,
-          -Math.PI / 2, 0, 0
-        ));
-      }
-
-      // Wall damage (moisture wicking)
-      if (room.damageTypes.includes('wall')) {
-        wallDamageInstanced.setMatrixAt(wallDamageIdx++, createMatrix(
-          cx, wickHeight / 2, room.z + wallThickness / 2 + 0.1,
-          room.width - wallThickness * 2, wickHeight, 0.1
-        ));
-        wallDamageInstanced.setMatrixAt(wallDamageIdx++, createMatrix(
-          cx, wickHeight / 2, room.z + room.depth - wallThickness / 2 - 0.1,
-          room.width - wallThickness * 2, wickHeight, 0.1
-        ));
-        wallDamageInstanced.setMatrixAt(wallDamageIdx++, createMatrix(
-          room.x + wallThickness / 2 + 0.1, wickHeight / 2, cz,
-          0.1, wickHeight, room.depth - wallThickness * 2
-        ));
-        wallDamageInstanced.setMatrixAt(wallDamageIdx++, createMatrix(
-          room.x + room.width - wallThickness / 2 - 0.1, wickHeight / 2, cz,
-          0.1, wickHeight, room.depth - wallThickness * 2
-        ));
-      }
-
       // Fixtures
       room.fixtures.forEach((fixture, index) => {
         const fixtureX = room.x + wallThickness + 2 + index * 3;
@@ -385,203 +266,196 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
 
         if (fixture === 'toilet') {
           toiletsInstanced.setMatrixAt(toiletIdx++, createMatrix(fixtureX, 0.75, fixtureZ));
-          if (room.damageTypes.includes('fixture')) {
-            fixtureDamageInstanced.setMatrixAt(fixtureDamageIdx++, createMatrix(
-              fixtureX, 0.25, fixtureZ, 1.6, 1, 2.1
-            ));
-          }
         } else if (fixture === 'sink') {
           sinksInstanced.setMatrixAt(sinkIdx++, createMatrix(fixtureX + 3, 1.25, fixtureZ));
-          if (room.damageTypes.includes('fixture')) {
-            fixtureDamageInstanced.setMatrixAt(fixtureDamageIdx++, createMatrix(
-              fixtureX + 3, 0.25, fixtureZ, 2.1, 1, 1.6
-            ));
-          }
         } else if (fixture === 'cabinet') {
           cabinetsInstanced.setMatrixAt(cabinetIdx++, createMatrix(fixtureX, 1.5, fixtureZ));
-          if (room.damageTypes.includes('fixture')) {
-            fixtureDamageInstanced.setMatrixAt(fixtureDamageIdx++, createMatrix(
-              fixtureX, 0.5, fixtureZ, 3.1, 1, 1.6
-            ));
-          }
         }
       });
-
-      // Above-ceiling infrastructure (in ceiling damage group) - only for rooms with actual ceiling leaks
-      if (room.ceilingLeakSeverity !== 'none') {
-        ductsInstanced.setMatrixAt(ductIdx++, createMatrix(
-          cx, BUILDING.ceilingHeight + 1.5, cz,
-          room.width * 0.6, 1, 1
-        ));
-        pipesInstanced.setMatrixAt(pipeIdx++, createMatrix(
-          cx, BUILDING.ceilingHeight + 0.5, room.z + room.depth * 0.3,
-          room.width * 0.8, 1, 1,
-          0, 0, Math.PI / 2
-        ));
-        // Infrastructure damage marker for all rooms with ceiling leaks
-        infraDamageInstanced.setMatrixAt(infraDamageIdx++, createMatrix(
-          cx, BUILDING.ceilingHeight + 2.2, cz,
-          room.width * 0.3, 1, 1
-        ));
-      }
-
-      // Hitbox for raycasting
-      const hitbox = new THREE.Mesh(
-        new THREE.BoxGeometry(room.width, wallHeight, room.depth),
-        new THREE.MeshBasicMaterial({ visible: false })
-      );
-      hitbox.position.set(cx, wallHeight / 2, cz);
-      hitbox.userData = { room };
-      roomMeshesRef.current.set(room.id, hitbox);
-      layerGroups.building.add(hitbox);
     });
 
     // Update instance matrices
     wallsInstanced.instanceMatrix.needsUpdate = true;
     floorsInstanced.instanceMatrix.needsUpdate = true;
-    ceilingsInstanced.instanceMatrix.needsUpdate = true;
-    floorDamageInstanced.instanceMatrix.needsUpdate = true;
-    wallDamageInstanced.instanceMatrix.needsUpdate = true;
     toiletsInstanced.instanceMatrix.needsUpdate = true;
     sinksInstanced.instanceMatrix.needsUpdate = true;
     cabinetsInstanced.instanceMatrix.needsUpdate = true;
-    fixtureDamageInstanced.instanceMatrix.needsUpdate = true;
-    ductsInstanced.instanceMatrix.needsUpdate = true;
-    pipesInstanced.instanceMatrix.needsUpdate = true;
-    infraDamageInstanced.instanceMatrix.needsUpdate = true;
 
-    // Ceiling leak zones (in ceiling damage group)
-    const severeMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.ceilingSevere,  // Amber
-      transparent: true,
-      opacity: 0.7,
-    });
-    const moderateMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.ceilingModerate,  // Yellow
-      transparent: true,
-      opacity: 0.6,
+    // Exterior perimeter walls (solid like interior walls)
+    const perimeterWallHeight = BUILDING.floorHeight;
+    const perimeterWallMaterial = new THREE.MeshStandardMaterial({
+      color: SURFACE_COLORS.wall,
+      roughness: 0.5,
     });
 
-    rooms.forEach((room) => {
-      if (room.ceilingLeakSeverity === 'none') return;
+    // North wall (Z = BUILDING.length)
+    const northWall = new THREE.Mesh(
+      new THREE.BoxGeometry(BUILDING.width, perimeterWallHeight, BUILDING.wallThickness),
+      perimeterWallMaterial
+    );
+    northWall.position.set(BUILDING.width / 2, perimeterWallHeight / 2, BUILDING.length);
+    layerGroups.building.add(northWall);
 
-      const material = room.ceilingLeakSeverity === 'severe' ? severeMaterial : moderateMaterial;
-      const hash = room.id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const stainCount = room.ceilingLeakSeverity === 'severe' ? 3 + (hash % 3) : 1 + (hash % 2);
+    // South wall (Z = 0)
+    const southWall = new THREE.Mesh(
+      new THREE.BoxGeometry(BUILDING.width, perimeterWallHeight, BUILDING.wallThickness),
+      perimeterWallMaterial
+    );
+    southWall.position.set(BUILDING.width / 2, perimeterWallHeight / 2, 0);
+    layerGroups.building.add(southWall);
 
-      for (let i = 0; i < stainCount; i++) {
-        const seed = hash + i * 137;
-        const stainSize = 1 + (seed % 20) / 10;
-        const xOffset = ((seed * 7) % 100) / 100;
-        const zOffset = ((seed * 13) % 100) / 100;
+    // East wall (X = BUILDING.width)
+    const eastWall = new THREE.Mesh(
+      new THREE.BoxGeometry(BUILDING.wallThickness, perimeterWallHeight, BUILDING.length),
+      perimeterWallMaterial
+    );
+    eastWall.position.set(BUILDING.width, perimeterWallHeight / 2, BUILDING.length / 2);
+    layerGroups.building.add(eastWall);
 
-        const stainGeom = new THREE.CircleGeometry(stainSize, 16);
-        const stain = new THREE.Mesh(stainGeom, material);
-        stain.rotation.x = -Math.PI / 2;  // Face UP toward camera (consistent with other planes)
-        stain.position.set(
-          room.x + wallThickness + xOffset * (room.width - wallThickness * 2),
-          BUILDING.ceilingHeight - 0.01,
-          room.z + wallThickness + zOffset * (room.depth - wallThickness * 2)
+    // West wall (X = 0)
+    const westWall = new THREE.Mesh(
+      new THREE.BoxGeometry(BUILDING.wallThickness, perimeterWallHeight, BUILDING.length),
+      perimeterWallMaterial
+    );
+    westWall.position.set(0, perimeterWallHeight / 2, BUILDING.length / 2);
+    layerGroups.building.add(westWall);
+
+    // === BUILDING-WIDE 3D FLOOR DAMAGE (extends beyond exterior walls) ===
+    const globalDamageHeight = 1.25;
+    const waterOverflow = 10; // Units beyond building perimeter on all sides
+    const globalFloorDamageMaterial = new THREE.MeshBasicMaterial({
+      color: DAMAGE_COLORS.floor,
+      transparent: true,
+      opacity: 0.20,           // Medium-light - structure remains dominant
+      depthWrite: false,       // Don't block other objects (water shows through walls)
+      side: THREE.DoubleSide,  // Visible from all angles
+    });
+    const globalFloorDamageGeom = new THREE.PlaneGeometry(
+      BUILDING.width + waterOverflow * 2,
+      BUILDING.length + waterOverflow * 2
+    );
+    const globalFloorDamage = new THREE.Mesh(globalFloorDamageGeom, globalFloorDamageMaterial);
+    globalFloorDamage.rotation.x = -Math.PI / 2; // Make horizontal (plane faces up)
+    globalFloorDamage.position.set(BUILDING.width / 2, globalDamageHeight, BUILDING.length / 2);
+    globalFloorDamage.renderOrder = -1; // Render before buildings
+    layerGroups.floorDamage.add(globalFloorDamage);
+
+    // === 2D FLAT PUDDLE OVERLAYS (replaces 3D cylinders for better performance) ===
+    const totalPuddles = 80; // Fewer but more impactful
+    const puddleGeom = new THREE.CircleGeometry(1, 24); // Unit circle, scaled per instance
+
+    for (let p = 0; p < totalPuddles; p++) {
+      const puddleSeed = p * 137 + 42;
+
+      // Position across building + overflow area
+      const puddleX = -waterOverflow + seededRandom(puddleSeed) * (BUILDING.width + waterOverflow * 2);
+      const puddleZ = -waterOverflow + seededRandom(puddleSeed + 1) * (BUILDING.length + waterOverflow * 2);
+
+      // Size variation (2-8 unit radius)
+      const puddleRadius = 2 + seededRandom(puddleSeed + 2) * 6;
+
+      // Ellipse effect via non-uniform scale
+      const scaleX = 0.7 + seededRandom(puddleSeed + 3) * 0.6;
+      const scaleZ = 0.7 + seededRandom(puddleSeed + 4) * 0.6;
+
+      // Opacity variation for depth illusion (30% dense, 70% light)
+      const isDense = seededRandom(puddleSeed + 5) > 0.7;
+      const opacity = isDense ? 0.25 + seededRandom(puddleSeed + 6) * 0.15 : 0.15 + seededRandom(puddleSeed + 6) * 0.10;
+
+      const puddleMaterial = new THREE.MeshBasicMaterial({
+        color: DAMAGE_COLORS.floor, // #DC2626 - matches wall base
+        transparent: true,
+        opacity: opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const puddle = new THREE.Mesh(puddleGeom.clone(), puddleMaterial);
+      puddle.rotation.x = -Math.PI / 2; // Horizontal
+      puddle.position.set(puddleX, 0.02 + p * 0.001, puddleZ); // Slight Y offset to avoid z-fighting
+      puddle.scale.set(puddleRadius * scaleX, puddleRadius * scaleZ, 1);
+      puddle.renderOrder = -1;
+      layerGroups.floorDamage.add(puddle);
+    }
+
+    // === WALL DAMAGE (single building-wide base + top drip marks) ===
+    const wickingHeight = BUILDING.wickingHeight; // 2 units = 24 inches
+
+    // Single building-wide wall base damage (red, matches floor)
+    const wallBaseMaterial = new THREE.MeshStandardMaterial({
+      color: DAMAGE_COLORS.floor, // Red - matches floor damage
+      transparent: true,
+      opacity: 0.5,
+      side: THREE.DoubleSide,
+    });
+    const wallBaseGeom = new THREE.BoxGeometry(
+      BUILDING.width + waterOverflow * 2,
+      wickingHeight,
+      BUILDING.length + waterOverflow * 2
+    );
+    const wallBase = new THREE.Mesh(wallBaseGeom, wallBaseMaterial);
+    wallBase.position.set(BUILDING.width / 2, wickingHeight / 2, BUILDING.length / 2);
+    layerGroups.wallDamage.add(wallBase);
+
+    // Wall top drip marks (water dripping from ceiling - on ALL walls)
+    const dripMaterial = new THREE.MeshStandardMaterial({
+      color: DAMAGE_COLORS.wall,
+      transparent: true,
+      opacity: 0.5,
+    });
+
+    // Helper to create drip marks along a wall
+    const createDripsAlongWall = (
+      wallLength: number,
+      wallX: number,
+      wallZ: number,
+      isHorizontalWall: boolean // true = runs along X axis, false = runs along Z axis
+    ) => {
+      const dripSpacing = 3; // One drip every 3 units
+      const dripCount = Math.floor(wallLength / dripSpacing);
+
+      for (let i = 0; i < dripCount; i++) {
+        const dripSeed = (wallX * 1000 + wallZ * 100 + i) * 17;
+        const dripHeight = 0.8 + seededRandom(dripSeed) * 1.2; // 0.8-2.0 units tall
+        const dripWidth = 0.15 + seededRandom(dripSeed + 1) * 0.15; // 0.15-0.3 units wide
+
+        const offset = (i + 0.5) * dripSpacing + seededRandom(dripSeed + 2) * 1.5; // Slight randomness
+
+        const drip = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            isHorizontalWall ? dripWidth : wallThickness * 1.1,
+            dripHeight,
+            isHorizontalWall ? wallThickness * 1.1 : dripWidth
+          ),
+          dripMaterial
         );
-        layerGroups.ceilingDamage.add(stain);
+
+        drip.position.set(
+          isHorizontalWall ? wallX + offset : wallX,
+          BUILDING.floorHeight - dripHeight / 2 - 0.1,
+          isHorizontalWall ? wallZ : wallZ + offset
+        );
+        layerGroups.wallDamage.add(drip);
       }
-    });
-
-    // ROOF - Semi-transparent with damage indicators
-    const roofMaterial = new THREE.MeshStandardMaterial({
-      color: SURFACE_COLORS.roof,  // Light stone
-      transparent: true,
-      opacity: 0.3,  // 30% opacity - see-through
-      side: THREE.DoubleSide,
-      roughness: 0.9,
-    });
-    const roofGeom = new THREE.PlaneGeometry(BUILDING.width, BUILDING.length);
-    const roof = new THREE.Mesh(roofGeom, roofMaterial);
-    roof.rotation.x = -Math.PI / 2;
-    roof.position.set(BUILDING.width / 2, BUILDING.totalHeight, BUILDING.length / 2);
-    layerGroups.building.add(roof);
-
-    // Roof damage indicators (matching ceiling leaks below) - in ceiling damage group
-    const roofDamageMaterial = new THREE.MeshStandardMaterial({
-      color: DAMAGE_COLORS.ceiling,  // Yellow
-      transparent: true,
-      opacity: 0.5,
-    });
-
-    rooms.forEach((room) => {
-      if (room.ceilingLeakSeverity === 'none') return;
-
-      // Create roof damage indicator above rooms with ceiling damage
-      const roofDamageGeom = new THREE.PlaneGeometry(room.width * 0.8, room.depth * 0.8);
-      const roofDamage = new THREE.Mesh(roofDamageGeom, roofDamageMaterial);
-      roofDamage.rotation.x = -Math.PI / 2;
-      roofDamage.position.set(
-        room.x + room.width / 2,
-        BUILDING.totalHeight + 0.1,  // Just above roof
-        room.z + room.depth / 2
-      );
-      layerGroups.ceilingDamage.add(roofDamage);
-    });
-
-    // Flood water (in floor damage group)
-    const floodMaterial = new THREE.MeshStandardMaterial({
-      color: SURFACE_COLORS.floodWater,  // Blue
-      transparent: true,
-      opacity: 0.5,
-      side: THREE.DoubleSide,
-    });
-    const floodGeom = new THREE.PlaneGeometry(BUILDING.width, BUILDING.length);
-    const floodWater = new THREE.Mesh(floodGeom, floodMaterial);
-    floodWater.rotation.x = -Math.PI / 2;
-    floodWater.position.set(BUILDING.width / 2, BUILDING.floodWaterHeight, BUILDING.length / 2);
-    floodWaterRef.current = floodWater;
-    layerGroups.floorDamage.add(floodWater);
-
-    // Annotation markers (in ceiling damage group)
-    const createInfoIconTexture = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-
-      ctx.beginPath();
-      ctx.arc(32, 32, 28, 0, Math.PI * 2);
-      ctx.fillStyle = '#3b82f6';
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 36px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('i', 32, 34);
-
-      return new THREE.CanvasTexture(canvas);
     };
 
-    const iconTexture = createInfoIconTexture();
-    if (iconTexture) {
-      const spriteMaterial = new THREE.SpriteMaterial({
-        map: iconTexture,
-        transparent: true,
-        depthTest: false,
-      });
+    // Add drips to all room walls
+    rooms.forEach((room) => {
+      // North wall drips (horizontal, at room.z + room.depth)
+      createDripsAlongWall(room.width, room.x, room.z + room.depth, true);
+      // South wall drips (horizontal, at room.z)
+      createDripsAlongWall(room.width, room.x, room.z, true);
+      // West wall drips (vertical, at room.x)
+      createDripsAlongWall(room.depth, room.x, room.z, false);
+      // East wall drips (vertical, at room.x + room.width)
+      createDripsAlongWall(room.depth, room.x + room.width, room.z, false);
+    });
 
-      annotations.forEach((annotation) => {
-        const sprite = new THREE.Sprite(spriteMaterial.clone());
-        sprite.position.set(
-          annotation.position.x,
-          BUILDING.floorHeight + 5,
-          annotation.position.z
-        );
-        sprite.scale.set(8, 8, 1);
-        sprite.userData = { annotation };
-        layerGroups.ceilingDamage.add(sprite);
-      });
-    }
+    // Add drips to perimeter walls
+    createDripsAlongWall(BUILDING.width, 0, BUILDING.length, true); // North
+    createDripsAlongWall(BUILDING.width, 0, 0, true); // South
+    createDripsAlongWall(BUILDING.length, BUILDING.width, 0, false); // East
+    createDripsAlongWall(BUILDING.length, 0, 0, false); // West
   };
 
   // Mouse handlers - 180° horizontal, ~78° vertical rotation
@@ -631,37 +505,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
     );
   }, []);
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    if (!containerRef.current || !cameraRef.current) return;
-
-    // Check if this was a drag
-    const moveThreshold = 5;
-    const dx = Math.abs(e.clientX - lastMouseRef.current.x);
-    const dy = Math.abs(e.clientY - lastMouseRef.current.y);
-    if (dx > moveThreshold || dy > moveThreshold) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-    const meshes = Array.from(roomMeshesRef.current.values());
-    const intersects = raycasterRef.current.intersectObjects(meshes);
-
-    if (intersects.length > 0) {
-      const room = intersects[0].object.userData.room as Room;
-      if (selectedRoom?.id === room.id) {
-        onRoomSelect(null);
-      } else {
-        onRoomSelect(room);
-        // Subtle focus on room (don't change angle dramatically)
-        targetRef.current.set(room.x + room.width / 2, 0, room.z + room.depth / 2);
-      }
-    } else {
-      onRoomSelect(null);
-    }
-  }, [onRoomSelect, selectedRoom]);
-
   return (
     <div
       ref={containerRef}
@@ -671,7 +514,6 @@ export function Scene({ layers, onRoomSelect, selectedRoom }: SceneProps) {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseUp}
       onWheel={handleWheel}
-      onClick={handleClick}
     />
   );
 }

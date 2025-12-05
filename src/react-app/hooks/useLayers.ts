@@ -1,41 +1,42 @@
 import { useState, useCallback } from 'react';
 
-// Simplified to 3 damage-only toggles
-// Building structure is always visible
+// Main toggle + sub-toggles for damage visualization
 export interface LayerState {
-  floorDamage: boolean;   // Floor flooding + fixtures + flood water
-  wallDamage: boolean;    // Wall wicking bands
-  ceilingDamage: boolean; // Ceiling leaks + above-ceiling infrastructure + annotations
+  flood: boolean;        // Main toggle: shows/hides all damage
+  floorDamage: boolean;  // Sub-toggle: floor damage (when flood is ON)
+  wallDamage: boolean;   // Sub-toggle: wall damage (when flood is ON)
+  ceilingDamage: boolean; // Sub-toggle: ceiling damage (when flood is ON)
 }
 
 export function useLayers() {
   const [layers, setLayers] = useState<LayerState>({
+    flood: true,
     floorDamage: true,
     wallDamage: true,
     ceilingDamage: true,
   });
 
-  const toggleLayer = useCallback((layer: keyof LayerState) => {
-    setLayers(prev => ({
-      ...prev,
-      [layer]: !prev[layer],
-    }));
+  const toggleFlood = useCallback(() => {
+    setLayers(prev => ({ ...prev, flood: !prev.flood }));
   }, []);
 
-  const setAllLayers = useCallback((value: boolean) => {
-    setLayers({
-      floorDamage: value,
-      wallDamage: value,
-      ceilingDamage: value,
-    });
+  const toggleFloorDamage = useCallback(() => {
+    setLayers(prev => ({ ...prev, floorDamage: !prev.floorDamage }));
   }, []);
 
-  const allOn = Object.values(layers).every(v => v);
+  const toggleWallDamage = useCallback(() => {
+    setLayers(prev => ({ ...prev, wallDamage: !prev.wallDamage }));
+  }, []);
+
+  const toggleCeilingDamage = useCallback(() => {
+    setLayers(prev => ({ ...prev, ceilingDamage: !prev.ceilingDamage }));
+  }, []);
 
   return {
     layers,
-    toggleLayer,
-    setAllLayers,
-    allOn,
+    toggleFlood,
+    toggleFloorDamage,
+    toggleWallDamage,
+    toggleCeilingDamage,
   };
 }
