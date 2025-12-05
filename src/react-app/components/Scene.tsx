@@ -31,7 +31,7 @@ const DEFAULT_CAMERA = {
 };
 
 // Camera rotation limits
-const THETA_LIMIT = Math.PI / 2;   // ±90° horizontal = 180° total swing
+const THETA_LIMIT = Math.PI;       // ±180° horizontal = 360° full rotation
 const PHI_MIN = 0.1;               // ~6° from vertical (near top-down)
 const PHI_MAX = Math.PI / 2 - 0.1; // ~84° from vertical (near horizontal)
 
@@ -562,7 +562,7 @@ export function Scene({ layers }: SceneProps) {
     const newTheta = sphericalRef.current.theta + thetaDelta;
     const newPhi = sphericalRef.current.phi + phiDelta;
 
-    // Clamp theta to ±90° from default (180° total horizontal swing)
+    // Clamp theta to ±180° from default (360° full rotation)
     sphericalRef.current.theta = Math.max(
       DEFAULT_CAMERA.theta - THETA_LIMIT,
       Math.min(DEFAULT_CAMERA.theta + THETA_LIMIT, newTheta)
@@ -575,11 +575,11 @@ export function Scene({ layers }: SceneProps) {
     );
   }, []);
 
-  // Zoom still works
+  // Zoom - expanded range for closer/farther inspection
   const handleWheel = useCallback((e: React.WheelEvent) => {
     sphericalRef.current.radius = Math.max(
-      100,
-      Math.min(600, sphericalRef.current.radius * (1 + e.deltaY * 0.001))
+      50,
+      Math.min(1000, sphericalRef.current.radius * (1 + e.deltaY * 0.001))
     );
   }, []);
 
